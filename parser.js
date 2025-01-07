@@ -6,14 +6,14 @@ import { config } from './config.js';
 import { Storage } from './storage.js';
 
 // URL and pagination config
-const BASE_URL = 'https://auto.ria.com/uk/legkovie/';
-const PAGES = 8;
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&abroad.not=0&custom.not=1&page=0&size=20';
+const PAGES = 4;
 
 // Delay configurations (in milliseconds)
 const MIN_PAGE_DELAY = 5000; // 5 seconds
 const MAX_PAGE_DELAY = 6000; // 8 seconds
 const MESSAGE_DELAY = 1000;   // 1 second between Telegram messages
-const UPDATE_INTERVAL = 3 * 60 * 1000; // 5 minutes between full updates
+const UPDATE_INTERVAL = 10 * 60 * 1000; // 5 minutes between full updates
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 60; // Consider listings fresh if they're less than 60 minutes old
