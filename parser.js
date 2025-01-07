@@ -8,17 +8,17 @@ import 'dotenv/config';
 
 
 // URL config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0&size=100';
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0&size=100';
 
 // Delay configurations (in milliseconds)
 const MESSAGE_DELAY = 1000;   // 1 second between Telegram messages
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes between full updates
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 20; // Consider listings fresh if they're less than 45 minutes old
+const FRESH_LISTING_THRESHOLD = 11; // Consider listings fresh if they're less than 45 minutes old
 
 // Telegram limits
-const MAX_MESSAGES_PER_CYCLE = 15;
+const MAX_MESSAGES_PER_CYCLE = 10;
 
 let allCars = [];
 
