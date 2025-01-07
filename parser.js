@@ -5,6 +5,20 @@ import TelegramBot from 'node-telegram-bot-api';
 import { config } from './config.js';
 import { Storage } from './storage.js';
 
+import http from 'http';
+
+// Add HTTP server
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Parser is running');
+});
+
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+
 // URL and pagination config
 const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&abroad.not=0&custom.not=1&page=0&size=20';
 const PAGES = 10;
