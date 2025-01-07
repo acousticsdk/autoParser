@@ -21,7 +21,7 @@ server.listen(PORT, () => {
 
 // URL and pagination config
 const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&abroad.not=0&custom.not=1&page=0&size=20';
-const PAGES = 10;
+const PAGES = 4;
 
 // Delay configurations (in milliseconds)
 const MIN_PAGE_DELAY = 5000; // 5 seconds
