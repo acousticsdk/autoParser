@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import moment from 'moment';
 import TelegramBot from 'node-telegram-bot-api';
+import http from 'http';
 import { config } from './config.js';
 import { Storage } from './storage.js';
 
@@ -10,7 +11,7 @@ const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newa
 
 // Delay configurations (in milliseconds)
 const MESSAGE_DELAY = 1000;   // 1 second between Telegram messages
-const UPDATE_INTERVAL = 10 * 60 * 1000; // 5 minutes between full updates
+const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes between full updates
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 60; // Consider listings fresh if they're less than 60 minutes old
@@ -32,7 +33,7 @@ async function sendToTelegram(car) {
         const addedTime = car.date.format('HH:mm');
         
         const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $\n\n${car.url}`;
-        
+
         try {
             await bot.sendMessage(config.TELEGRAM_CHAT_ID, message);
             await storage.markCarAsSent(car.url);
@@ -111,5 +112,14 @@ async function startParsing() {
     }, UPDATE_INTERVAL);
 }
 
-// Start the parser
-startParsing();
+// Create HTTP server
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Parser is running');
+});
+
+const port = process.env.PORT || 3000;
+server.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+    startParsing();
+});
