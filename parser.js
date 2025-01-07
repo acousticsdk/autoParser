@@ -5,15 +5,12 @@ import TelegramBot from 'node-telegram-bot-api';
 import { config } from './config.js';
 import { Storage } from './storage.js';
 
-// URL and pagination config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&abroad.not=0&custom.not=1&page=0&size=20';
-const PAGES = 4;
+// URL config
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&abroad.not=0&custom.not=1&page=0&size=100';
 
 // Delay configurations (in milliseconds)
-const MIN_PAGE_DELAY = 5000; // 5 seconds
-const MAX_PAGE_DELAY = 6000; // 8 seconds
 const MESSAGE_DELAY = 1000;   // 1 second between Telegram messages
-const UPDATE_INTERVAL = 10 * 60 * 1000; // 5 minutes between full updates
+const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes between full updates
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 60; // Consider listings fresh if they're less than 60 minutes old
@@ -47,12 +44,12 @@ async function sendToTelegram(car) {
     }
 }
 
-async function parsePage(page) {
-    console.log(`Parsing page ${page}...`);
-    const response = await axios.get(`${BASE_URL}?page=${page}`);
+async function parsePage() {
+    console.log('Parsing page...');
+    const response = await axios.get(BASE_URL);
     const $ = cheerio.load(response.data);
     const cars = [];
-    let pageCarCount = 0;
+    let carCount = 0;
 
     $('section.ticket-item').each((_, element) => {
         const dateElement = $(element).find('.footer_ticket span[data-add-date]');
@@ -69,34 +66,11 @@ async function parsePage(page) {
                 title,
                 price: price || 'Ціна не вказана'
             });
-            pageCarCount++;
+            carCount++;
         }
     });
-    console.log(`✓ Page ${page} completed. Found ${pageCarCount} cars`);
+    console.log(`✓ Parsing completed. Found ${carCount} cars`);
     return cars;
-}
-
-async function parseAllPages() {
-    console.log('Starting to parse all pages...');
-    let allPageCars = [];
-
-    for (let page = 1; page <= PAGES; page++) {
-        try {
-            const cars = await parsePage(page);
-            allPageCars = [...allPageCars, ...cars];
-
-            if (page < PAGES) {
-                const delayTime = Math.floor(Math.random() * (MAX_PAGE_DELAY - MIN_PAGE_DELAY) + MIN_PAGE_DELAY);
-                console.log(`Waiting ${Math.round(delayTime/1000)} seconds before next page...`);
-                await delay(delayTime);
-            }
-        } catch (error) {
-            console.error(`❌ Error parsing page ${page}:`, error.message);
-        }
-    }
-
-    console.log(`Parsing completed. Total cars found: ${allPageCars.length}`);
-    return allPageCars;
 }
 
 async function processNewCars() {
@@ -121,7 +95,7 @@ async function processNewCars() {
 
 async function updateData() {
     console.log(`\n${moment().format('HH:mm')} - Starting update...`);
-    allCars = await parseAllPages();
+    allCars = await parsePage();
     await processNewCars();
 }
 
