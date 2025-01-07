@@ -5,29 +5,15 @@ import TelegramBot from 'node-telegram-bot-api';
 import { config } from './config.js';
 import { Storage } from './storage.js';
 
-import http from 'http';
-
-// Add HTTP server
-const PORT = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Parser is running');
-});
-
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
-
 // URL and pagination config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&abroad.not=0&custom.not=1&page=0&size=20';
-const PAGES = 4;
+const BASE_URL = 'https://auto.ria.com/uk/legkovie/';
+const PAGES = 8;
 
 // Delay configurations (in milliseconds)
 const MIN_PAGE_DELAY = 5000; // 5 seconds
 const MAX_PAGE_DELAY = 6000; // 8 seconds
 const MESSAGE_DELAY = 1000;   // 1 second between Telegram messages
-const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes between full updates
+const UPDATE_INTERVAL = 3 * 60 * 1000; // 5 minutes between full updates
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 60; // Consider listings fresh if they're less than 60 minutes old
@@ -46,15 +32,14 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function sendToTelegram(car) {
     if (!await storage.isCarSent(car.url)) {
-        const minutesAgo = moment().diff(car.date, 'minutes');
-        const timeAgoText = minutesAgo <= 1 ? 'тільки що' : `${minutesAgo} хвилин тому`;
+        const addedTime = car.date.format('HH:mm');
         
-        const message = `🚗 Нове авто! Додано ${timeAgoText}\n\n${car.title}\n\n💰 ${car.price}\n\n${car.url}`;
+        const message = `🚗 Нове авто! Час додавання: ${addedTime}\n\n${car.title}\n\n💰 ${car.price}\n\n${car.url}`;
         
         try {
             await bot.sendMessage(config.TELEGRAM_CHAT_ID, message);
             await storage.markCarAsSent(car.url);
-            console.log(`✓ Sent to Telegram: ${car.title} (${timeAgoText})`);
+            console.log(`✓ Sent to Telegram: ${car.title} (${addedTime})`);
             await delay(MESSAGE_DELAY);
         } catch (error) {
             console.error('Error sending to Telegram:', error.message);
@@ -76,15 +61,13 @@ async function parsePage(page) {
         const url = link.attr('href');
         const title = link.attr('title');
         const price = $(element).find('span.bold.size22.green[data-currency="USD"]').text().trim();
-        const phone = $(element).find('.phone').text().trim();
 
         if (dateStr && url && title) {
             cars.push({
                 date: moment(dateStr),
                 url,
                 title,
-                price: price || 'Ціна не вказана',
-                phone
+                price: price || 'Ціна не вказана'
             });
             pageCarCount++;
         }
@@ -120,7 +103,7 @@ async function processNewCars() {
     const freshThreshold = moment().subtract(FRESH_LISTING_THRESHOLD, 'minutes');
     const newCars = allCars
         .filter(car => car.date.isAfter(freshThreshold))
-        .sort((a, b) => b.date - a.date); // Newest first
+        .sort((a, b) => a.date - b.date); // Oldest first
 
     console.log(`Found ${newCars.length} fresh listings in the last ${FRESH_LISTING_THRESHOLD} minutes`);
 
@@ -137,7 +120,7 @@ async function processNewCars() {
 }
 
 async function updateData() {
-    console.log(`\n${moment().format('HH:mm:ss')} - Starting update...`);
+    console.log(`\n${moment().format('HH:mm')} - Starting update...`);
     allCars = await parseAllPages();
     await processNewCars();
 }

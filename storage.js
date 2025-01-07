@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 
 const DB_FILE = 'sent_cars.json';
-const MAX_URLS = 300;
+const MAX_URLS = 10; // Changed from 300 to 10
 
 export class Storage {
   constructor() {
