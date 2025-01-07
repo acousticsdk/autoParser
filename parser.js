@@ -15,10 +15,10 @@ const MESSAGE_DELAY = 1000;   // 1 second between Telegram messages
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes between full updates
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 30; // Consider listings fresh if they're less than 60 minutes old
+const FRESH_LISTING_THRESHOLD = 12; // Consider listings fresh if they're less than 60 minutes old
 
 // Telegram limits
-const MAX_MESSAGES_PER_CYCLE = 10;
+const MAX_MESSAGES_PER_CYCLE = 20;
 
 let allCars = [];
 
