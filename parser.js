@@ -31,7 +31,7 @@ async function sendToTelegram(car) {
     if (!await storage.isCarSent(car.url)) {
         const addedTime = car.date.format('HH:mm');
         
-        const message = `🚗 Нове авто! Час додавання: ${addedTime}\n\n${car.title}\n\n💰 ${car.price}\n\n${car.url}`;
+        const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $\n\n${car.url}`;
         
         try {
             await bot.sendMessage(config.TELEGRAM_CHAT_ID, message);
