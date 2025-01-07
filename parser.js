@@ -1,125 +1,60 @@
-import axios from 'axios';
-import * as cheerio from 'cheerio';
-import moment from 'moment';
-import TelegramBot from 'node-telegram-bot-api';
-import http from 'http';
-import { config } from './config.js';
-import { Storage } from './storage.js';
+import fs from 'fs/promises';
 
-// URL config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&abroad.not=0&custom.not=1&page=0&size=100';
+const DB_FILE = 'sent_cars.json';
+const MAX_URLS = 50; // Changed from 300 to 10
 
-// Delay configurations (in milliseconds)
-const MESSAGE_DELAY = 1000;   // 1 second between Telegram messages
-const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes between full updates
+export class Storage {
+  constructor() {
+    this.sentCars = new Set();
+    this.urlTimestamps = new Map(); // Track when URLs were added
+    this.loaded = false;
+  }
 
-// Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 600; // Consider listings fresh if they're less than 60 minutes old
-
-// Telegram limits
-const MAX_MESSAGES_PER_CYCLE = 15;
-
-let allCars = [];
-
-// Initialize Telegram bot
-const bot = new TelegramBot(config.TELEGRAM_BOT_TOKEN);
-const storage = new Storage();
-
-// Helper function for delays
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-async function sendToTelegram(car) {
-    if (!await storage.isCarSent(car.url)) {
-        const addedTime = car.date.format('HH:mm');
-        
-        const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $\n\n${car.url}`;
-
-        try {
-            await bot.sendMessage(config.TELEGRAM_CHAT_ID, message);
-            await storage.markCarAsSent(car.url);
-            console.log(`✓ Sent to Telegram: ${car.title} (${addedTime})`);
-            await delay(MESSAGE_DELAY);
-        } catch (error) {
-            console.error('Error sending to Telegram:', error.message);
-        }
+  async load() {
+    try {
+      const data = await fs.readFile(DB_FILE, 'utf-8');
+      const urls = JSON.parse(data);
+      
+      // Convert to Map with timestamps
+      urls.forEach(url => {
+        this.sentCars.add(url);
+        this.urlTimestamps.set(url, Date.now());
+      });
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        await this.save();
+      } else {
+        console.error('Error loading storage:', error);
+      }
     }
-}
+    this.loaded = true;
+  }
 
-async function parsePage() {
-    console.log('Parsing page...');
-    const response = await axios.get(BASE_URL);
-    const $ = cheerio.load(response.data);
-    const cars = [];
-    let carCount = 0;
+  async save() {
+    await fs.writeFile(DB_FILE, JSON.stringify([...this.sentCars]));
+  }
 
-    $('section.ticket-item').each((_, element) => {
-        const dateElement = $(element).find('.footer_ticket span[data-add-date]');
-        const dateStr = dateElement.attr('data-add-date');
-        const link = $(element).find('div.item.ticket-title a.address');
-        const url = link.attr('href');
-        const title = link.attr('title');
-        const price = $(element).find('span.bold.size22.green[data-currency="USD"]').text().trim();
+  isCarSent(carUrl) {
+    return this.sentCars.has(carUrl);
+  }
 
-        if (dateStr && url && title) {
-            cars.push({
-                date: moment(dateStr),
-                url,
-                title,
-                price: price || 'Ціна не вказана'
-            });
-            carCount++;
-        }
-    });
-    console.log(`✓ Parsing completed. Found ${carCount} cars`);
-    return cars;
-}
+  async markCarAsSent(carUrl) {
+    this.sentCars.add(carUrl);
+    this.urlTimestamps.set(carUrl, Date.now());
 
-async function processNewCars() {
-    const freshThreshold = moment().subtract(FRESH_LISTING_THRESHOLD, 'minutes');
-    const newCars = allCars
-        .filter(car => car.date.isAfter(freshThreshold))
-        .sort((a, b) => a.date - b.date); // Oldest first
-
-    console.log(`Found ${newCars.length} fresh listings in the last ${FRESH_LISTING_THRESHOLD} minutes`);
-
-    // Only process up to MAX_MESSAGES_PER_CYCLE new cars
-    const carsToProcess = newCars.slice(0, MAX_MESSAGES_PER_CYCLE);
-    
-    for (const car of carsToProcess) {
-        await sendToTelegram(car);
+    // Remove oldest URLs if we exceed the limit
+    if (this.sentCars.size > MAX_URLS) {
+      const urlsArray = [...this.urlTimestamps.entries()];
+      urlsArray.sort((a, b) => a[1] - b[1]); // Sort by timestamp
+      
+      // Remove oldest URLs until we're back at the limit
+      while (this.sentCars.size > MAX_URLS) {
+        const [oldestUrl] = urlsArray.shift();
+        this.sentCars.delete(oldestUrl);
+        this.urlTimestamps.delete(oldestUrl);
+      }
     }
 
-    if (newCars.length > MAX_MESSAGES_PER_CYCLE) {
-        console.log(`Limiting messages to ${MAX_MESSAGES_PER_CYCLE}. ${newCars.length - MAX_MESSAGES_PER_CYCLE} cars will be processed in the next cycle.`);
-    }
+    await this.save();
+  }
 }
-
-async function updateData() {
-    console.log(`\n${moment().format('HH:mm')} - Starting update...`);
-    allCars = await parsePage();
-    await processNewCars();
-}
-
-async function startParsing() {
-    console.log('Parser started');
-    await storage.load();
-    await updateData();
-    
-    // Restart the whole process every 5 minutes
-    setTimeout(() => {
-        console.log('\nRestarting parser process...');
-        startParsing();
-    }, UPDATE_INTERVAL);
-}
-
-// Create HTTP server
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Parser is running');
-});
-
-const port = process.env.PORT || 3000;
-server.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-    startParsing();
-});
