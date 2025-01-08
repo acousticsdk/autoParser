@@ -62,8 +62,12 @@ async function parsePage() {
         const price = $(element).find('span.bold.size22.green[data-currency="USD"]').text().trim();
 
         if (dateStr && url && title) {
+            // Debug date parsing
+            const parsedDate = moment(dateStr);
+            console.log(`Raw date: ${dateStr}, Parsed date: ${parsedDate.format('YYYY-MM-DD HH:mm:ss')}`);
+            
             cars.push({
-                date: moment(dateStr),
+                date: parsedDate,
                 url,
                 title,
                 price: price || 'Ціна не вказана'
@@ -71,28 +75,15 @@ async function parsePage() {
             carCount++;
         }
     });
+    
+    // Log the first few cars with their dates
+    console.log('\nFirst 3 cars with dates:');
+    cars.slice(0, 3).forEach(car => {
+        console.log(`${car.title}: ${car.date.format('YYYY-MM-DD HH:mm:ss')}`);
+    });
+    
     console.log(`✓ Parsing completed. Found ${carCount} cars`);
     return cars;
-}
-
-async function processNewCars() {
-    const freshThreshold = moment().subtract(FRESH_LISTING_THRESHOLD, 'minutes');
-    const newCars = allCars
-        .filter(car => car.date.isAfter(freshThreshold))
-        .sort((a, b) => a.date - b.date); // Oldest first
-
-    console.log(`Found ${newCars.length} fresh listings in the last ${FRESH_LISTING_THRESHOLD} minutes`);
-
-    // Only process up to MAX_MESSAGES_PER_CYCLE new cars
-    const carsToProcess = newCars.slice(0, MAX_MESSAGES_PER_CYCLE);
-    
-    for (const car of carsToProcess) {
-        await sendToTelegram(car);
-    }
-
-    if (newCars.length > MAX_MESSAGES_PER_CYCLE) {
-        console.log(`Limiting messages to ${MAX_MESSAGES_PER_CYCLE}. ${newCars.length - MAX_MESSAGES_PER_CYCLE} cars will be processed in the next cycle.`);
-    }
 }
 
 async function updateData() {
