@@ -17,19 +17,25 @@ const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newa
 
 // Delay configurations (in milliseconds)
 const MESSAGE_DELAY = 1000;   // 1 second between Telegram messages
-const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes between full updates
+const UPDATE_INTERVAL = 4 * 60 * 1000; // 5 minutes between full updates
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 11;
+const FRESH_LISTING_THRESHOLD = 15;
 
 // Telegram limits
-const MAX_MESSAGES_PER_CYCLE = 10;
+const MAX_MESSAGES_PER_CYCLE = 15;
 
 let allCars = [];
 
 // Initialize Telegram bot with error handling
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 const storage = new Storage();
+
+// Verify bot connection
+bot.getMe().catch(error => {
+    console.error('Failed to connect to Telegram:', error);
+    process.exit(1);
+});
 
 // Helper function for delays
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,40 +61,58 @@ async function sendToTelegram(car) {
 
 async function parsePage() {
     console.log('Parsing page...');
-    const response = await axios.get(BASE_URL);
-    const $ = cheerio.load(response.data);
-    const cars = [];
-    let carCount = 0;
+    try {
+        const timestamp = Date.now();
+        const urlWithTimestamp = `${BASE_URL}&_=${timestamp}`;
+        
+        const response = await axios.get(urlWithTimestamp, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'If-None-Match': '',
+                'If-Modified-Since': ''
+            },
+            timeout: 30000
+        });
 
-    $('section.ticket-item').each((_, element) => {
-        const dateElement = $(element).find('.footer_ticket span[data-add-date]');
-        const dateStr = dateElement.attr('data-add-date');
-        const link = $(element).find('div.item.ticket-title a.address');
-        const url = link.attr('href');
-        const title = link.attr('title');
-        const price = $(element).find('span.bold.size22.green[data-currency="USD"]').text().trim();
+        const $ = cheerio.load(response.data);
+        const cars = [];
+        let carCount = 0;
 
-        if (dateStr && url && title) {
-            const parsedDate = moment(dateStr);
-            console.log(`Raw date: ${dateStr}, Parsed date: ${parsedDate.format('YYYY-MM-DD HH:mm:ss')}`);
-            
-            cars.push({
-                date: parsedDate,
-                url,
-                title,
-                price: price || 'Ціна не вказана'
-            });
-            carCount++;
-        }
-    });
-    
-    console.log('\nFirst 3 cars with dates:');
-    cars.slice(0, 3).forEach(car => {
-        console.log(`${car.title}: ${car.date.format('YYYY-MM-DD HH:mm:ss')}`);
-    });
-    
-    console.log(`✓ Parsing completed. Found ${carCount} cars`);
-    return cars;
+        $('section.ticket-item').each((_, element) => {
+            const dateElement = $(element).find('.footer_ticket span[data-add-date]');
+            const dateStr = dateElement.attr('data-add-date');
+            const link = $(element).find('div.item.ticket-title a.address');
+            const url = link.attr('href');
+            const title = link.attr('title');
+            const price = $(element).find('span.bold.size22.green[data-currency="USD"]').text().trim();
+
+            if (dateStr && url && title) {
+                const parsedDate = moment(dateStr);
+                console.log(`Raw date: ${dateStr}, Parsed date: ${parsedDate.format('YYYY-MM-DD HH:mm:ss')}`);
+                
+                cars.push({
+                    date: parsedDate,
+                    url,
+                    title,
+                    price: price || 'Ціна не вказана'
+                });
+                carCount++;
+            }
+        });
+        
+        console.log('\nFirst 3 cars with dates:');
+        cars.slice(0, 3).forEach(car => {
+            console.log(`${car.title}: ${car.date.format('YYYY-MM-DD HH:mm:ss')}`);
+        });
+        
+        console.log(`✓ Parsing completed. Found ${carCount} cars`);
+        return cars;
+    } catch (error) {
+        console.error('Error parsing page:', error);
+        return [];
+    }
 }
 
 async function processNewCars() {
