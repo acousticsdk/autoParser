@@ -9,7 +9,7 @@ COPY package*.json ./
 RUN npm ci
 
 # Copy project files
-COPY ../../Desktop/project%204 .
+COPY . .
 
 # Start the application
 CMD ["node", "parser.js"]
