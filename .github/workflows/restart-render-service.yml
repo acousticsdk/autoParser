@@ -4,6 +4,7 @@ on:
   schedule:
     # Выполнять каждый день в 4:00 по Киеву (2:00 UTC)
     - cron: '0 2 * * *'
+  workflow_dispatch: # Добавляем ручной запуск
 
 jobs:
   restart-service:
