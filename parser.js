@@ -53,8 +53,7 @@ bot.getMe().catch(error => {
     process.exit(1);
 });
 
-// Function to get phone numbers using Puppeteer
-async function getPhoneNumber(url) {
+async function getPhoneNumber(url, retryCount = 0) {
     try {
         const browser = await puppeteer.launch({
             headless: "new",
@@ -70,23 +69,42 @@ async function getPhoneNumber(url) {
         await page.click('.phone_show_link');
         
         // Wait 1 second after clicking
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Get all phone numbers
         const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
             elements.map(el => el.textContent.trim())
         );
         
+        await browser.close();
+
+        // Проверяем, содержит ли хотя бы один номер слово "показати"
+        const hasShowWord = phoneNumbers.some(number => number.toLowerCase().includes('показати'));
+        
+        // Если есть слово "показати" и это первая попытка
+        if (hasShowWord && retryCount === 0) {
+            console.log('Phone number contains "показати", retrying...');
+            return getPhoneNumber(url, 1); // Повторный запуск с увеличенным счетчиком
+        }
+        
+        // Если это вторая попытка и все еще есть "показати"
+        if (hasShowWord && retryCount === 1) {
+            return ['Номер на сайті'];
+        }
+
         console.log('Phone numbers found:', phoneNumbers.length);
         phoneNumbers.forEach((number, index) => {
             console.log(`Phone number ${index + 1}:`, number);
         });
 
-        await browser.close();
         return phoneNumbers;
     } catch (error) {
         console.error('Error:', error.message);
-        return [];
+        if (retryCount === 0) {
+            console.log('Error occurred, retrying...');
+            return getPhoneNumber(url, 1);
+        }
+        return ['Номер на сайті'];
     }
 }
 
