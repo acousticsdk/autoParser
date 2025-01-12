@@ -70,7 +70,7 @@ async function getPhoneNumber(url) {
         await page.click('.phone_show_link');
         
         // Wait 1 second after clicking
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
         
         // Get all phone numbers
         const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
