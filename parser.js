@@ -99,7 +99,7 @@ async function getPhoneNumber(url, retryCount = 0) {
         // Отключение изображений и стилей для экономии памяти
         await page.setRequestInterception(true);
         page.on('request', (request) => {
-            if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
+            if (['image', 'font'].includes(request.resourceType())) {
                 request.abort();
             } else {
                 request.continue();
