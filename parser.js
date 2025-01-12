@@ -35,17 +35,17 @@ if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
 }
 
 // URL config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=70&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=50&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
 
 // Size range for random page size
 const MIN_SIZE = 20;
-const MAX_SIZE = 80;
+const MAX_SIZE = 100;
 
 // Update interval (in milliseconds)
 const UPDATE_INTERVAL = 4 * 60 * 1000; // 4 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 60;
+const FRESH_LISTING_THRESHOLD = 30;
 
 // Telegram limits
 const MAX_MESSAGES_PER_CYCLE = 50;
@@ -73,7 +73,7 @@ async function getPhoneNumber(url, retryCount = 0) {
     const MAX_RETRIES = 3;
     let browser = null;
     let page = null;
-    
+
     try {
         browser = await puppeteer.launch({
             headless: "new",
@@ -91,12 +91,10 @@ async function getPhoneNumber(url, retryCount = 0) {
         });
 
         page = await browser.newPage();
-        
-        // Установка таймаутов
+
         await page.setDefaultNavigationTimeout(45000);
         await page.setDefaultTimeout(45000);
-        
-        // Отключение изображений и стилей для экономии памяти
+
         await page.setRequestInterception(true);
         page.on('request', (request) => {
             if (['image', 'font'].includes(request.resourceType())) {
@@ -110,9 +108,8 @@ async function getPhoneNumber(url, retryCount = 0) {
         await page.setUserAgent(browserProfile.userAgent);
         await page.setViewport({ width: 1280, height: 800 });
 
-        // Переход на страницу с обработкой ошибок
         try {
-            await page.goto(url, { 
+            await page.goto(url, {
                 waitUntil: 'networkidle2',
                 timeout: 30000
             });
@@ -126,31 +123,51 @@ async function getPhoneNumber(url, retryCount = 0) {
             throw error;
         }
 
-        // Ожидание появления кнопки и проверка видимости
-        await page.waitForSelector('.phone_show_link', { timeout: 10000 });
-        
+        // Ждем появления кнопки
+        const phoneButtonSelector = '.phone_show_link';
+        await page.waitForSelector(phoneButtonSelector, { timeout: 10000 });
+
         // Проверяем видимость элемента
         const isVisible = await page.evaluate(() => {
             const element = document.querySelector('.phone_show_link');
             if (!element) return false;
-            
+
             const style = window.getComputedStyle(element);
-            return style && 
-                   style.display !== 'none' && 
-                   style.visibility !== 'hidden' && 
-                   style.opacity !== '0';
+            return style &&
+                style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                style.opacity !== '0';
         });
-        
+
         console.log(`Phone button visibility status: ${isVisible ? 'visible' : 'not visible'}`);
-        
+
+        // Прокручиваем к элементу
+        await page.evaluate((selector) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, phoneButtonSelector);
+
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Клик по кнопке с повторными попытками
+        // Пробуем кликнуть разными способами
         let clicked = false;
         for (let i = 0; i < 3; i++) {
             try {
-                await page.click('.phone_show_link');
+                // Сначала пробуем кликнуть через evaluate
+                await page.evaluate((selector) => {
+                    const element = document.querySelector(selector);
+                    if (element) {
+                        element.click();
+                    }
+                }, phoneButtonSelector);
+
+                // Если не сработало, пробуем через page.click
+                await page.click(phoneButtonSelector, { delay: 100 });
+
                 clicked = true;
+                console.log('Click successful');
                 break;
             } catch (error) {
                 console.log(`Click attempt ${i + 1} failed: ${error.message}`);
@@ -163,26 +180,26 @@ async function getPhoneNumber(url, retryCount = 0) {
         }
 
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
+
+        const phoneNumbers = await page.$$eval('span.phone.bold', elements =>
             elements.map(el => el.textContent.trim())
         );
-        
-        const hasShowWord = phoneNumbers.some(number => 
+
+        const hasShowWord = phoneNumbers.some(number =>
             number.toLowerCase().includes('показати')
         );
-        
+
         if (hasShowWord && retryCount < MAX_RETRIES) {
             console.log(`Found "показати" in response, retrying... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
             await new Promise(resolve => setTimeout(resolve, 3000));
             return getPhoneNumber(url, retryCount + 1);
         }
-        
+
         if (phoneNumbers.length > 0 && !hasShowWord) {
             console.log('Phone numbers found:', phoneNumbers.length);
             return phoneNumbers;
         }
-        
+
         return ['📞 Телефон на сайті'];
     } catch (error) {
         console.error(`Error getting phone numbers (attempt ${retryCount + 1}): ${error.message}`);
@@ -210,21 +227,22 @@ async function getPhoneNumber(url, retryCount = 0) {
     }
 }
 
+
 async function sendToTelegram(car) {
     if (!await storage.isCarSent(car.url)) {
         const addedTime = car.date.format('HH:mm');
-        
+
         try {
             console.log(`Getting phone numbers for: ${car.title}`);
             const phoneNumbers = await getPhoneNumber(car.url);
-            
+
             let phoneInfo = '';
             if (phoneNumbers.length === 1) {
                 phoneInfo = `\n📞 ${phoneNumbers[0]}`;
             } else if (phoneNumbers.length > 1) {
                 phoneInfo = '\n' + phoneNumbers.map(phone => `📞 ${phone}`).join('\n');
             }
-            
+
             const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
 
             await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
@@ -246,11 +264,11 @@ async function parsePage() {
         const randomParam = Math.random().toString(36).substring(7);
         const randomSize = getRandomInt(MIN_SIZE, MAX_SIZE);
         const urlWithParams = `${BASE_URL}&size=${randomSize}&_=${timestamp}&nocache=${randomParam}`;
-        
+
         const browserProfile = getRandomBrowserProfile();
         console.log(`Using browser: ${browserProfile.name} ${browserProfile.version}`);
         console.log(`Using random page size: ${randomSize}`);
-        
+
         const axiosInstance = axios.create({
             headers: {
                 ...commonHeaders,
@@ -265,7 +283,7 @@ async function parsePage() {
             maxRedirects: 5,
             withCredentials: false
         });
-        
+
         const sessionParams = new URLSearchParams({
             '_rand': Math.random().toString(36).substring(7),
             'tz': browserProfile.timezoneOffset.toString(),
@@ -274,7 +292,7 @@ async function parsePage() {
             'cd': browserProfile.screenParams.colorDepth.toString(),
             'v': Math.floor(Math.random() * 1000000).toString()
         });
-        
+
         const finalUrl = `${urlWithParams}&${sessionParams.toString()}`;
         const response = await axiosInstance.get(finalUrl);
 
@@ -309,7 +327,7 @@ async function parsePage() {
         // Очищаем память
         $.root().empty();
         response.data = null;
-        
+
         console.log(`✓ Parsing completed. Found ${carCount} cars`);
         return cars;
     } catch (error) {
@@ -321,7 +339,7 @@ async function parsePage() {
 async function processNewCars() {
     const now = moment();
     const freshThreshold = now.subtract(FRESH_LISTING_THRESHOLD, 'minutes');
-    
+
     const newCars = allCars.filter(car => car.date.isAfter(freshThreshold));
 
     console.log(`\nFound ${newCars.length} fresh listings`);
@@ -333,7 +351,7 @@ async function processNewCars() {
     const sortedCars = [...newCars].sort((a, b) => a.date - b.date);
     const carsToProcess = sortedCars.slice(0, MAX_MESSAGES_PER_CYCLE);
     let sentCount = 0;
-    
+
     for (const car of carsToProcess) {
         if (await sendToTelegram(car)) {
             sentCount++;
@@ -363,7 +381,7 @@ async function updateData() {
             allCars = cars;
             await processNewCars();
             allCars = []; // Очищаем массив после обработки
-            
+
             // Запускаем сборщик мусора через 60 секунд после завершения цикла
             setTimeout(runGarbageCollection, 60000);
         } else {
@@ -379,7 +397,7 @@ async function startParsing() {
     try {
         await storage.load();
         await updateData();
-        
+
         setInterval(async () => {
             const currentTime = moment().format('HH:mm:ss');
             console.log(`\nStarting new update cycle... [${currentTime}]`);
