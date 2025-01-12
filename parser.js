@@ -72,6 +72,8 @@ bot.getMe().catch(error => {
 async function getPhoneNumber(url, retryCount = 0) {
     const MAX_RETRIES = 3;
     let browser = null;
+    let page = null;
+    
     try {
         browser = await puppeteer.launch({
             headless: "new",
@@ -81,63 +83,108 @@ async function getPhoneNumber(url, retryCount = 0) {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
-                '--disable-extensions'
+                '--disable-extensions',
+                '--memory-pressure-off',
+                '--single-process',
+                '--no-zygote'
             ]
         });
 
-        const page = await browser.newPage();
-        try {
-            await page.setViewport({ width: 1280, height: 800 });
-            const browserProfile = getRandomBrowserProfile();
-            await page.setUserAgent(browserProfile.userAgent);
-            
-            await page.setDefaultNavigationTimeout(30000);
-            
-            await page.goto(url, { waitUntil: 'networkidle0' });
-            await new Promise(resolve => setTimeout(resolve, 2000));
+        page = await browser.newPage();
+        
+        // Установка таймаутов
+        await page.setDefaultNavigationTimeout(45000);
+        await page.setDefaultTimeout(45000);
+        
+        // Отключение изображений и стилей для экономии памяти
+        await page.setRequestInterception(true);
+        page.on('request', (request) => {
+            if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
+                request.abort();
+            } else {
+                request.continue();
+            }
+        });
 
-            await page.click('.phone_show_link');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
-                elements.map(el => el.textContent.trim())
-            );
-            
-            // Проверяем, есть ли слово "показати" в номерах
-            const hasShowWord = phoneNumbers.some(number => number.toLowerCase().includes('показати'));
-            
-            if (hasShowWord && retryCount < MAX_RETRIES) {
-                console.log(`Found "показати" in response, retrying... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-                await browser.close();
-                browser = null;
-                // Делаем паузу перед повторной попыткой
-                await new Promise(resolve => setTimeout(resolve, 3000));
+        const browserProfile = getRandomBrowserProfile();
+        await page.setUserAgent(browserProfile.userAgent);
+        await page.setViewport({ width: 1280, height: 800 });
+
+        // Переход на страницу с обработкой ошибок
+        try {
+            await page.goto(url, { 
+                waitUntil: 'networkidle2',
+                timeout: 30000
+            });
+        } catch (error) {
+            console.log(`Navigation error: ${error.message}`);
+            if (retryCount < MAX_RETRIES) {
+                console.log(`Retrying navigation (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
                 return getPhoneNumber(url, retryCount + 1);
             }
-            
-            // Если после 3х попыток все еще есть "показати"
-            if (hasShowWord && retryCount >= MAX_RETRIES) {
-                console.log('Still showing "показати" after maximum retries');
-                return ['📞 Телефон на сайті'];
-            }
-            
-            if (phoneNumbers.length > 0 && !hasShowWord) {
-                console.log('Phone numbers found:', phoneNumbers.length);
-                phoneNumbers.forEach((number, index) => {
-                    console.log(`Phone number ${index + 1}:`, number);
-                });
-                return phoneNumbers;
-            }
-            
-            console.log('No valid phone numbers found');
-            return ['📞 Телефон на сайті'];
-        } finally {
-            await page.close();
+            throw error;
         }
+
+        // Ожидание появления кнопки
+        await page.waitForSelector('.phone_show_link', { timeout: 10000 });
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Клик по кнопке с повторными попытками
+        let clicked = false;
+        for (let i = 0; i < 3; i++) {
+            try {
+                await page.click('.phone_show_link');
+                clicked = true;
+                break;
+            } catch (error) {
+                console.log(`Click attempt ${i + 1} failed: ${error.message}`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        if (!clicked) {
+            throw new Error('Failed to click phone button after 3 attempts');
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
+            elements.map(el => el.textContent.trim())
+        );
+        
+        const hasShowWord = phoneNumbers.some(number => 
+            number.toLowerCase().includes('показати')
+        );
+        
+        if (hasShowWord && retryCount < MAX_RETRIES) {
+            console.log(`Found "показати" in response, retrying... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            return getPhoneNumber(url, retryCount + 1);
+        }
+        
+        if (phoneNumbers.length > 0 && !hasShowWord) {
+            console.log('Phone numbers found:', phoneNumbers.length);
+            return phoneNumbers;
+        }
+        
+        return ['📞 Телефон на сайті'];
     } catch (error) {
-        console.error('Error getting phone numbers:', error.message);
+        console.error(`Error getting phone numbers (attempt ${retryCount + 1}): ${error.message}`);
+        if (retryCount < MAX_RETRIES) {
+            console.log(`Retrying full process... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            return getPhoneNumber(url, retryCount + 1);
+        }
         return ['📞 Телефон на сайті'];
     } finally {
+        if (page) {
+            try {
+                await page.close();
+            } catch (e) {
+                console.error('Error closing page:', e.message);
+            }
+        }
         if (browser) {
             try {
                 await browser.close();
