@@ -35,11 +35,11 @@ if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
 }
 
 // URL config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=50&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=70&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
 
 // Size range for random page size
 const MIN_SIZE = 20;
-const MAX_SIZE = 100;
+const MAX_SIZE = 80;
 
 // Update interval (in milliseconds)
 const UPDATE_INTERVAL = 4 * 60 * 1000; // 4 minutes between full update
@@ -126,8 +126,23 @@ async function getPhoneNumber(url, retryCount = 0) {
             throw error;
         }
 
-        // Ожидание появления кнопки
+        // Ожидание появления кнопки и проверка видимости
         await page.waitForSelector('.phone_show_link', { timeout: 10000 });
+        
+        // Проверяем видимость элемента
+        const isVisible = await page.evaluate(() => {
+            const element = document.querySelector('.phone_show_link');
+            if (!element) return false;
+            
+            const style = window.getComputedStyle(element);
+            return style && 
+                   style.display !== 'none' && 
+                   style.visibility !== 'hidden' && 
+                   style.opacity !== '0';
+        });
+        
+        console.log(`Phone button visibility status: ${isVisible ? 'visible' : 'not visible'}`);
+        
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Клик по кнопке с повторными попытками
