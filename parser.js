@@ -12,6 +12,22 @@ import 'dotenv/config';
 process.env.TZ = 'Europe/Kiev';
 moment.locale('uk');
 
+// Common headers for requests
+const commonHeaders = {
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache'
+};
+
 // Validate environment variables
 if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
     console.error('Missing required environment variables');
@@ -23,7 +39,7 @@ const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newa
 
 // Size range for random page size
 const MIN_SIZE = 20;
-const MAX_SIZE = 50;
+const MAX_SIZE = 100;
 
 // Update interval (in milliseconds)
 const UPDATE_INTERVAL = 4 * 60 * 1000; // 4 minutes between full update
@@ -91,7 +107,6 @@ async function getPhoneNumber(url) {
                 console.log(`Phone number ${index + 1}:`, number);
             });
             
-            // Закрываем браузер только при успешном получении номеров
             await browser.close();
             browser = null;
             
@@ -103,7 +118,6 @@ async function getPhoneNumber(url) {
     } catch (error) {
         console.error('Error getting phone numbers:', error.message);
         
-        // Закрываем браузер только при критических ошибках
         if (error.message.includes('net::') || 
             error.message.includes('Navigation timeout') ||
             error.message.includes('Protocol error')) {
@@ -118,7 +132,6 @@ async function getPhoneNumber(url) {
         
         return [];
     } finally {
-        // Закрываем браузер только если он все еще открыт после критических ошибок
         if (browser) {
             try {
                 await browser.close();
@@ -171,7 +184,10 @@ async function parsePage() {
         console.log(`Using random page size: ${randomSize}`);
         
         const axiosInstance = axios.create({
-            headers: browserProfile.headers,
+            headers: {
+                ...commonHeaders,
+                ...browserProfile.headers
+            },
             timeout: 30000,
             validateStatus: function (status) {
                 return status >= 200 && status < 300;
@@ -270,7 +286,6 @@ async function updateData() {
             console.log('No cars found in this update');
         }
         
-        // Очистка старых записей через 30 секунд после завершения цикла
         setTimeout(async () => {
             await storage.cleanupOldRecords();
         }, 30000);
