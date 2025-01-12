@@ -54,29 +54,28 @@ export class Storage {
 
     async markCarAsSent(carUrl) {
         try {
+            const count = await this.db.collection(COLLECTION_NAME).countDocuments();
+            
+            if (count >= MAX_URLS) {
+                // Находим самую старую запись для удаления
+                const oldestRecord = await this.db.collection(COLLECTION_NAME)
+                    .find()
+                    .sort({ timestamp: 1 })
+                    .limit(1)
+                    .toArray();
+
+                if (oldestRecord.length > 0) {
+                    // Удаляем самую старую запись
+                    await this.db.collection(COLLECTION_NAME)
+                        .deleteOne({ _id: oldestRecord[0]._id });
+                }
+            }
+
             // Добавляем новую запись
             await this.db.collection(COLLECTION_NAME).insertOne({
                 url: carUrl,
                 timestamp: new Date()
             });
-            
-            // Удаляем старые записи, оставляя только последние MAX_URLS
-            const count = await this.db.collection(COLLECTION_NAME).countDocuments();
-            if (count > MAX_URLS) {
-                const oldestToKeep = await this.db.collection(COLLECTION_NAME)
-                    .find()
-                    .sort({ timestamp: -1 })
-                    .skip(MAX_URLS - 1)
-                    .limit(1)
-                    .toArray();
-
-                if (oldestToKeep.length > 0) {
-                    await this.db.collection(COLLECTION_NAME)
-                        .deleteMany({ 
-                            timestamp: { $lt: oldestToKeep[0].timestamp } 
-                        });
-                }
-            }
         } catch (error) {
             if (error.code !== 11000) {
                 console.error('Error marking car as sent:', error);

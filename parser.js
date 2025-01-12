@@ -83,53 +83,40 @@ async function getPhoneNumber(url) {
                 '--disable-extensions'
             ]
         });
-        const page = await browser.newPage();
-        
-        await page.setViewport({ width: 1280, height: 800 });
-        const browserProfile = getRandomBrowserProfile();
-        await page.setUserAgent(browserProfile.userAgent);
-        
-        await page.setDefaultNavigationTimeout(30000);
-        
-        await page.goto(url, { waitUntil: 'networkidle0' });
-        await new Promise(resolve => setTimeout(resolve, 2000));
 
-        await page.click('.phone_show_link');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
-            elements.map(el => el.textContent.trim())
-        );
-        
-        if (phoneNumbers.length > 0) {
-            console.log('Phone numbers found:', phoneNumbers.length);
-            phoneNumbers.forEach((number, index) => {
-                console.log(`Phone number ${index + 1}:`, number);
-            });
+        const page = await browser.newPage();
+        try {
+            await page.setViewport({ width: 1280, height: 800 });
+            const browserProfile = getRandomBrowserProfile();
+            await page.setUserAgent(browserProfile.userAgent);
             
-            await browser.close();
-            browser = null;
+            await page.setDefaultNavigationTimeout(30000);
             
-            return phoneNumbers;
-        } else {
-            console.log('No phone numbers found, keeping browser open for retry');
+            await page.goto(url, { waitUntil: 'networkidle0' });
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            await page.click('.phone_show_link');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
+                elements.map(el => el.textContent.trim())
+            );
+            
+            if (phoneNumbers.length > 0) {
+                console.log('Phone numbers found:', phoneNumbers.length);
+                phoneNumbers.forEach((number, index) => {
+                    console.log(`Phone number ${index + 1}:`, number);
+                });
+                return phoneNumbers;
+            }
+            
+            console.log('No phone numbers found');
             return [];
+        } finally {
+            await page.close();
         }
     } catch (error) {
         console.error('Error getting phone numbers:', error.message);
-        
-        if (error.message.includes('net::') || 
-            error.message.includes('Navigation timeout') ||
-            error.message.includes('Protocol error')) {
-            console.log('Critical error occurred, closing browser');
-            if (browser) {
-                await browser.close();
-                browser = null;
-            }
-        } else {
-            console.log('Non-critical error, keeping browser open for retry');
-        }
-        
         return [];
     } finally {
         if (browser) {
@@ -237,6 +224,10 @@ async function parsePage() {
                 carCount++;
             }
         });
+
+        // Очищаем память
+        $.root().empty();
+        response.data = null;
         
         console.log(`✓ Parsing completed. Found ${carCount} cars`);
         return cars;
@@ -275,6 +266,14 @@ async function processNewCars() {
     }
 }
 
+async function runGarbageCollection() {
+    if (global.gc) {
+        console.log('Running garbage collection...');
+        global.gc();
+        console.log('Garbage collection completed');
+    }
+}
+
 async function updateData() {
     try {
         console.log(`\n${moment().format('HH:mm')} - Starting update...`);
@@ -282,14 +281,13 @@ async function updateData() {
         if (cars.length > 0) {
             allCars = cars;
             await processNewCars();
+            allCars = []; // Очищаем массив после обработки
+            
+            // Запускаем сборщик мусора через 60 секунд после завершения цикла
+            setTimeout(runGarbageCollection, 60000);
         } else {
             console.log('No cars found in this update');
         }
-        
-        setTimeout(async () => {
-            await storage.cleanupOldRecords();
-        }, 30000);
-        
     } catch (error) {
         console.error('Error in update cycle:', error);
     }
