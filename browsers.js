@@ -130,7 +130,6 @@ function generateBrowserProfile() {
         screenParams,
         timezoneOffset,
         headers: {
-            ...commonHeaders,
             'User-Agent': userAgent,
             'Sec-Ch-Ua': `"${browser.name}";v="${version}", "Not=A?Brand";v="99"`,
             'Sec-Ch-Ua-Mobile': '?0',
