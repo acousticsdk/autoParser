@@ -45,7 +45,7 @@ const MAX_SIZE = 80;
 const UPDATE_INTERVAL = 4 * 60 * 1000; // 4 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 30;
+const FRESH_LISTING_THRESHOLD = 60;
 
 // Telegram limits
 const MAX_MESSAGES_PER_CYCLE = 50;
