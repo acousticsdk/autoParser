@@ -35,7 +35,7 @@ if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
 }
 
 // URL config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=20&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
 
 // Size range for random page size
 const MIN_SIZE = 20;
@@ -69,7 +69,8 @@ bot.getMe().catch(error => {
     process.exit(1);
 });
 
-async function getPhoneNumber(url) {
+async function getPhoneNumber(url, retryCount = 0) {
+    const MAX_RETRIES = 3;
     let browser = null;
     try {
         browser = await puppeteer.launch({
@@ -102,7 +103,25 @@ async function getPhoneNumber(url) {
                 elements.map(el => el.textContent.trim())
             );
             
-            if (phoneNumbers.length > 0) {
+            // Проверяем, есть ли слово "показати" в номерах
+            const hasShowWord = phoneNumbers.some(number => number.toLowerCase().includes('показати'));
+            
+            if (hasShowWord && retryCount < MAX_RETRIES) {
+                console.log(`Found "показати" in response, retrying... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                await browser.close();
+                browser = null;
+                // Делаем паузу перед повторной попыткой
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                return getPhoneNumber(url, retryCount + 1);
+            }
+            
+            // Если после 3х попыток все еще есть "показати"
+            if (hasShowWord && retryCount >= MAX_RETRIES) {
+                console.log('Still showing "показати" after maximum retries');
+                return ['📞 Телефон на сайті'];
+            }
+            
+            if (phoneNumbers.length > 0 && !hasShowWord) {
                 console.log('Phone numbers found:', phoneNumbers.length);
                 phoneNumbers.forEach((number, index) => {
                     console.log(`Phone number ${index + 1}:`, number);
@@ -110,14 +129,14 @@ async function getPhoneNumber(url) {
                 return phoneNumbers;
             }
             
-            console.log('No phone numbers found');
-            return [];
+            console.log('No valid phone numbers found');
+            return ['📞 Телефон на сайті'];
         } finally {
             await page.close();
         }
     } catch (error) {
         console.error('Error getting phone numbers:', error.message);
-        return [];
+        return ['📞 Телефон на сайті'];
     } finally {
         if (browser) {
             try {
