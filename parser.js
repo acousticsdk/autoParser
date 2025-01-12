@@ -53,58 +53,79 @@ bot.getMe().catch(error => {
     process.exit(1);
 });
 
-async function getPhoneNumber(url, retryCount = 0) {
+async function getPhoneNumber(url) {
+    let browser = null;
     try {
-        const browser = await puppeteer.launch({
+        browser = await puppeteer.launch({
             headless: "new",
-            args: ['--no-sandbox']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--disable-extensions'
+            ]
         });
         const page = await browser.newPage();
-        await page.goto(url);
         
-        // Wait 2 seconds after page load
+        await page.setViewport({ width: 1280, height: 800 });
+        const browserProfile = getRandomBrowserProfile();
+        await page.setUserAgent(browserProfile.userAgent);
+        
+        await page.setDefaultNavigationTimeout(30000);
+        
+        await page.goto(url, { waitUntil: 'networkidle0' });
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Click the show phone button
         await page.click('.phone_show_link');
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Wait 1 second after clicking
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Get all phone numbers
         const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
             elements.map(el => el.textContent.trim())
         );
         
-        await browser.close();
-
-        // Проверяем, содержит ли хотя бы один номер слово "показати"
-        const hasShowWord = phoneNumbers.some(number => number.toLowerCase().includes('показати'));
-        
-        // Если есть слово "показати" и это первая попытка
-        if (hasShowWord && retryCount === 0) {
-            console.log('Phone number contains "показати", retrying...');
-            return getPhoneNumber(url, 1); // Повторный запуск с увеличенным счетчиком
+        if (phoneNumbers.length > 0) {
+            console.log('Phone numbers found:', phoneNumbers.length);
+            phoneNumbers.forEach((number, index) => {
+                console.log(`Phone number ${index + 1}:`, number);
+            });
+            
+            // Закрываем браузер только при успешном получении номеров
+            await browser.close();
+            browser = null;
+            
+            return phoneNumbers;
+        } else {
+            console.log('No phone numbers found, keeping browser open for retry');
+            return [];
         }
-        
-        // Если это вторая попытка и все еще есть "показати"
-        if (hasShowWord && retryCount === 1) {
-            return ['Номер на сайті'];
-        }
-
-        console.log('Phone numbers found:', phoneNumbers.length);
-        phoneNumbers.forEach((number, index) => {
-            console.log(`Phone number ${index + 1}:`, number);
-        });
-
-        return phoneNumbers;
     } catch (error) {
-        console.error('Error:', error.message);
-        if (retryCount === 0) {
-            console.log('Error occurred, retrying...');
-            return getPhoneNumber(url, 1);
+        console.error('Error getting phone numbers:', error.message);
+        
+        // Закрываем браузер только при критических ошибках
+        if (error.message.includes('net::') || 
+            error.message.includes('Navigation timeout') ||
+            error.message.includes('Protocol error')) {
+            console.log('Critical error occurred, closing browser');
+            if (browser) {
+                await browser.close();
+                browser = null;
+            }
+        } else {
+            console.log('Non-critical error, keeping browser open for retry');
         }
-        return ['Номер на сайті'];
+        
+        return [];
+    } finally {
+        // Закрываем браузер только если он все еще открыт после критических ошибок
+        if (browser) {
+            try {
+                await browser.close();
+            } catch (e) {
+                console.error('Error closing browser:', e.message);
+            }
+        }
     }
 }
 
@@ -113,11 +134,9 @@ async function sendToTelegram(car) {
         const addedTime = car.date.format('HH:mm');
         
         try {
-            // Get phone numbers before sending message
             console.log(`Getting phone numbers for: ${car.title}`);
             const phoneNumbers = await getPhoneNumber(car.url);
             
-            // Format phone numbers
             let phoneInfo = '';
             if (phoneNumbers.length === 1) {
                 phoneInfo = `\n📞 ${phoneNumbers[0]}`;
@@ -147,12 +166,10 @@ async function parsePage() {
         const randomSize = getRandomInt(MIN_SIZE, MAX_SIZE);
         const urlWithParams = `${BASE_URL}&size=${randomSize}&_=${timestamp}&nocache=${randomParam}`;
         
-        // Get random browser profile
         const browserProfile = getRandomBrowserProfile();
         console.log(`Using browser: ${browserProfile.name} ${browserProfile.version}`);
         console.log(`Using random page size: ${randomSize}`);
         
-        // Create custom axios instance for this request
         const axiosInstance = axios.create({
             headers: browserProfile.headers,
             timeout: 30000,
@@ -165,7 +182,6 @@ async function parsePage() {
             withCredentials: false
         });
         
-        // Add random query parameters to simulate different sessions
         const sessionParams = new URLSearchParams({
             '_rand': Math.random().toString(36).substring(7),
             'tz': browserProfile.timezoneOffset.toString(),
@@ -178,7 +194,6 @@ async function parsePage() {
         const finalUrl = `${urlWithParams}&${sessionParams.toString()}`;
         const response = await axiosInstance.get(finalUrl);
 
-        // Add delay after request to allow page to fully load
         console.log('Waiting for page to load completely...');
         await new Promise(resolve => setTimeout(resolve, 5000));
         console.log('Processing page content...');
@@ -227,10 +242,7 @@ async function processNewCars() {
         console.log('\nProcessing new cars...');
     }
 
-    // Sort cars by date (oldest first)
     const sortedCars = [...newCars].sort((a, b) => a.date - b.date);
-    
-    // Take only the allowed number of messages
     const carsToProcess = sortedCars.slice(0, MAX_MESSAGES_PER_CYCLE);
     let sentCount = 0;
     
@@ -257,6 +269,12 @@ async function updateData() {
         } else {
             console.log('No cars found in this update');
         }
+        
+        // Очистка старых записей через 30 секунд после завершения цикла
+        setTimeout(async () => {
+            await storage.cleanupOldRecords();
+        }, 30000);
+        
     } catch (error) {
         console.error('Error in update cycle:', error);
     }

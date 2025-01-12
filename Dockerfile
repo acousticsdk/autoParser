@@ -11,5 +11,8 @@ RUN npm ci
 # Copy project files
 COPY . .
 
+# Set Node options for memory limit
+ENV NODE_OPTIONS=--max-old-space-size=512
+
 # Start the application
 CMD ["node", "parser.js"]

@@ -42,22 +42,6 @@ const browsers = [
     }
 ];
 
-// Additional headers that vary by browser
-const commonHeaders = {
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
-    'Pragma': 'no-cache'
-};
-
 // Generate random IP from common ranges
 function generateRandomIP() {
     const ranges = [
@@ -111,23 +95,17 @@ function generateTimezoneOffset() {
 }
 
 function generateBrowserProfile() {
-    // Select random browser
     const browser = getRandomElement(browsers);
-    
-    // Get random versions and platform
     const version = getRandomElement(browser.versions);
     const platform = getRandomElement(browser.platforms);
     
-    // Generate random extensions subset (2-3 extensions)
     const numExtensions = Math.floor(Math.random() * 2) + 2;
     const extensions = [...browser.extensions]
         .sort(() => 0.5 - Math.random())
         .slice(0, numExtensions);
     
-    // Generate user agent
     const userAgent = browser.userAgent(version, platform);
     
-    // Generate random viewport size
     const viewports = [
         { width: 1920, height: 1080 },
         { width: 1366, height: 768 },
@@ -137,12 +115,10 @@ function generateBrowserProfile() {
     ];
     const viewport = getRandomElement(viewports);
     
-    // Generate additional parameters
     const screenParams = generateScreenParams();
     const ip = generateRandomIP();
     const timezoneOffset = generateTimezoneOffset();
     
-    // Return complete browser profile
     return {
         name: browser.name,
         version,
