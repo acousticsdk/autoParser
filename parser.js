@@ -35,14 +35,14 @@ if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
 }
 
 // URL config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=20&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=100&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
 
 // Size range for random page size
 const MIN_SIZE = 20;
-const MAX_SIZE = 100;
+const MAX_SIZE = 80;
 
 // Update interval (in milliseconds)
-const UPDATE_INTERVAL = 12 * 60 * 1000; // 4 minutes between full update
+const UPDATE_INTERVAL = 7 * 60 * 1000; // 4 minutes between full update
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 30;
@@ -120,28 +120,9 @@ async function waitForSelectorWithRetry(page, selector, maxAttempts = 3) {
     }
 }
 
-async function getPhoneNumber(url, retryCount = 0) {
-    const MAX_RETRIES = 3;
-    let browser = null;
+async function tryGetPhoneNumbers(browser, url) {
     let page = null;
-    
     try {
-        browser = await puppeteer.launch({
-            headless: "new",
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu',
-                '--disable-extensions',
-                '--memory-pressure-off',
-                '--single-process',
-                '--no-zygote',
-                '--window-size=1920,1080'
-            ]
-        });
-
         page = await browser.newPage();
         
         await page.setDefaultNavigationTimeout(45000);
@@ -160,46 +141,30 @@ async function getPhoneNumber(url, retryCount = 0) {
         await page.setUserAgent(browserProfile.userAgent);
         await page.setViewport({ width: 1920, height: 1080 });
 
-        try {
-            await page.goto(url, { 
-                waitUntil: 'networkidle2',
-                timeout: 30000
-            });
-        } catch (error) {
-            console.log(`Navigation error: ${error.message}`);
-            if (retryCount < MAX_RETRIES) {
-                console.log(`Retrying navigation (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, 5000));
-                return getPhoneNumber(url, retryCount + 1);
-            }
-            throw error;
-        }
+        await page.goto(url, { 
+            waitUntil: 'networkidle2',
+            timeout: 30000
+        });
 
-        // Эмуляция человеческого поведения перед поиском кнопки
         await simulateHumanBehavior(page);
 
-        // Ждем появления кнопки с повторными попытками
         console.log('Waiting for phone button...');
         const phoneButton = await waitForSelectorWithRetry(page, '.phone_show_link');
         console.log('Phone button found');
 
-        // Прокручиваем страницу к кнопке
         await page.evaluate(element => {
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, phoneButton);
 
         await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
 
-        // Пробуем разные способы клика
         try {
-            // 1. Прямой клик через ElementHandle
             await phoneButton.click({ delay: getRandomDelay(50, 150) });
             console.log('Direct click successful');
         } catch (error) {
             console.log('Direct click failed, trying alternative methods...');
             
             try {
-                // 2. Клик через evaluate
                 await page.evaluate(() => {
                     const button = document.querySelector('.phone_show_link');
                     if (button) {
@@ -210,7 +175,6 @@ async function getPhoneNumber(url, retryCount = 0) {
             } catch (evalError) {
                 console.log('Evaluate click failed, trying dispatch...');
                 
-                // 3. Диспатч события клика
                 await page.evaluate(() => {
                     const button = document.querySelector('.phone_show_link');
                     if (button) {
@@ -235,26 +199,16 @@ async function getPhoneNumber(url, retryCount = 0) {
             number.toLowerCase().includes('показати')
         );
         
-        if (hasShowWord && retryCount < MAX_RETRIES) {
-            console.log(`Found "показати" in response, retrying... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            return getPhoneNumber(url, retryCount + 1);
+        if (hasShowWord) {
+            throw new Error('Phone numbers not revealed');
         }
         
-        if (phoneNumbers.length > 0 && !hasShowWord) {
+        if (phoneNumbers.length > 0) {
             console.log('Phone numbers found:', phoneNumbers.length);
             return phoneNumbers;
         }
         
-        return ['Телефон на сайті'];
-    } catch (error) {
-        console.error(`Error getting phone numbers (attempt ${retryCount + 1}): ${error.message}`);
-        if (retryCount < MAX_RETRIES) {
-            console.log(`Retrying full process... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            return getPhoneNumber(url, retryCount + 1);
-        }
-        return ['Телефон на сайті'];
+        throw new Error('No phone numbers found');
     } finally {
         if (page) {
             try {
@@ -263,14 +217,64 @@ async function getPhoneNumber(url, retryCount = 0) {
                 console.error('Error closing page:', e.message);
             }
         }
-        if (browser) {
-            try {
-                await browser.close();
-            } catch (e) {
-                console.error('Error closing browser:', e.message);
+    }
+}
+
+async function getPhoneNumber(url, retryCount = 0) {
+    const MAX_RETRIES = 3;
+    const MAX_BROWSER_RETRIES = 2;
+    let browser = null;
+    
+    for (let browserAttempt = 0; browserAttempt < MAX_BROWSER_RETRIES; browserAttempt++) {
+        try {
+            console.log(`Browser attempt ${browserAttempt + 1}/${MAX_BROWSER_RETRIES}`);
+            
+            browser = await puppeteer.launch({
+                headless: "new",
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--disable-gpu',
+                    '--disable-extensions',
+                    '--memory-pressure-off',
+                    '--single-process',
+                    '--no-zygote',
+                    '--window-size=1920,1080'
+                ]
+            });
+
+            const phoneNumbers = await tryGetPhoneNumbers(browser, url);
+            return phoneNumbers;
+        } catch (error) {
+            console.error(`Error in browser attempt ${browserAttempt + 1}: ${error.message}`);
+            
+            if (browser) {
+                try {
+                    await browser.close();
+                } catch (e) {
+                    console.error('Error closing browser:', e.message);
+                }
+            }
+            
+            // Если это не последняя попытка с браузером, пробуем еще раз
+            if (browserAttempt < MAX_BROWSER_RETRIES - 1) {
+                console.log('Trying with a new browser instance...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                continue;
+            }
+            
+            // Если это последняя попытка с браузером, но есть еще попытки ретрая
+            if (retryCount < MAX_RETRIES) {
+                console.log(`Retrying full process... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                return getPhoneNumber(url, retryCount + 1);
             }
         }
     }
+    
+    return ['Телефон на сайті'];
 }
 
 async function sendToTelegram(car) {
@@ -411,10 +415,44 @@ async function processNewCars() {
 }
 
 async function runGarbageCollection() {
-    if (global.gc) {
-        console.log('Running garbage collection...');
+    console.log('\nChecking garbage collection availability...');
+    
+    if (typeof global.gc === 'undefined') {
+        console.log('Garbage collection is not enabled. To enable, run Node.js with --expose-gc flag');
+        console.log('Current Node.js flags:', process.execArgv);
+        return;
+    }
+    
+    try {
+        const memoryBefore = process.memoryUsage();
+        console.log('Memory usage before GC:');
+        console.log('  - Heap used:', Math.round(memoryBefore.heapUsed / 1024 / 1024), 'MB');
+        console.log('  - Heap total:', Math.round(memoryBefore.heapTotal / 1024 / 1024), 'MB');
+        console.log('  - RSS:', Math.round(memoryBefore.rss / 1024 / 1024), 'MB');
+        
+        console.log('\nRunning garbage collection...');
         global.gc();
-        console.log('Garbage collection completed');
+        
+        const memoryAfter = process.memoryUsage();
+        console.log('\nMemory usage after GC:');
+        console.log('  - Heap used:', Math.round(memoryAfter.heapUsed / 1024 / 1024), 'MB');
+        console.log('  - Heap total:', Math.round(memoryAfter.heapTotal / 1024 / 1024), 'MB');
+        console.log('  - RSS:', Math.round(memoryAfter.rss / 1024 / 1024), 'MB');
+        
+        const freed = {
+            heapUsed: memoryBefore.heapUsed - memoryAfter.heapUsed,
+            heapTotal: memoryBefore.heapTotal - memoryAfter.heapTotal,
+            rss: memoryBefore.rss - memoryAfter.rss
+        };
+        
+        console.log('\nMemory freed:');
+        console.log('  - Heap used:', Math.round(freed.heapUsed / 1024 / 1024), 'MB');
+        console.log('  - Heap total:', Math.round(freed.heapTotal / 1024 / 1024), 'MB');
+        console.log('  - RSS:', Math.round(freed.rss / 1024 / 1024), 'MB');
+        
+        console.log('\nGarbage collection completed successfully');
+    } catch (error) {
+        console.error('Error during garbage collection:', error);
     }
 }
 
