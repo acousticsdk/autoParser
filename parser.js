@@ -63,20 +63,59 @@ function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-async function waitForElement(page, selector, timeout = 10000) {
-    try {
-        await page.waitForSelector(selector, { timeout });
-        const element = await page.$(selector);
-        if (!element) {
-            return null;
+// Helper function to generate random delay
+function getRandomDelay(min, max) {
+    return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+async function simulateHumanBehavior(page) {
+    // Случайная задержка перед действиями
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
+    
+    // Случайные движения мыши
+    await page.mouse.move(getRandomInt(100, 700), getRandomInt(100, 500));
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
+    
+    // Случайная прокрутка
+    await page.evaluate(() => {
+        window.scrollBy(0, getRandomInt(100, 300));
+    });
+    
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1000)));
+}
+
+async function waitForSelectorWithRetry(page, selector, maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            await page.waitForSelector(selector, { 
+                visible: true, 
+                timeout: 15000 
+            });
+            
+            // Дополнительная проверка на видимость и кликабельность
+            const element = await page.$(selector);
+            if (!element) {
+                throw new Error('Element not found after waiting');
+            }
+            
+            const isVisible = await element.isVisible();
+            if (!isVisible) {
+                throw new Error('Element is not visible');
+            }
+            
+            const box = await element.boundingBox();
+            if (!box) {
+                throw new Error('Element has no bounding box');
+            }
+            
+            return element;
+        } catch (error) {
+            console.log(`Attempt ${attempt}/${maxAttempts} failed: ${error.message}`);
+            if (attempt === maxAttempts) {
+                throw error;
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
-        const isVisible = await element.isVisible();
-        if (!isVisible) {
-            return null;
-        }
-        return element;
-    } catch (error) {
-        return null;
     }
 }
 
@@ -97,7 +136,8 @@ async function getPhoneNumber(url, retryCount = 0) {
                 '--disable-extensions',
                 '--memory-pressure-off',
                 '--single-process',
-                '--no-zygote'
+                '--no-zygote',
+                '--window-size=1920,1080'
             ]
         });
 
@@ -117,7 +157,7 @@ async function getPhoneNumber(url, retryCount = 0) {
 
         const browserProfile = getRandomBrowserProfile();
         await page.setUserAgent(browserProfile.userAgent);
-        await page.setViewport({ width: 1280, height: 800 });
+        await page.setViewport({ width: 1920, height: 1080 });
 
         try {
             await page.goto(url, { 
@@ -134,42 +174,57 @@ async function getPhoneNumber(url, retryCount = 0) {
             throw error;
         }
 
-        // Ждем появления кнопки и проверяем её видимость
-        const phoneButton = await waitForElement(page, '.phone_show_link');
-        if (!phoneButton) {
-            console.log('Phone button not found or not visible');
-            throw new Error('Phone button not found or not visible');
-        }
+        // Эмуляция человеческого поведения перед поиском кнопки
+        await simulateHumanBehavior(page);
 
-        console.log('Phone button found and visible');
+        // Ждем появления кнопки с повторными попытками
+        console.log('Waiting for phone button...');
+        const phoneButton = await waitForSelectorWithRetry(page, '.phone_show_link');
+        console.log('Phone button found');
 
-        // Прокручиваем к элементу
-        await phoneButton.scrollIntoView();
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Прокручиваем страницу к кнопке
+        await page.evaluate(element => {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, phoneButton);
 
-        // Проверяем, что элемент все еще существует после прокрутки
-        const buttonAfterScroll = await waitForElement(page, '.phone_show_link');
-        if (!buttonAfterScroll) {
-            console.log('Button lost after scroll');
-            throw new Error('Button lost after scroll');
-        }
+        await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
 
-        // Пробуем кликнуть
+        // Пробуем разные способы клика
         try {
-            await buttonAfterScroll.click({ delay: 100 });
-            console.log('Click successful');
+            // 1. Прямой клик через ElementHandle
+            await phoneButton.click({ delay: getRandomDelay(50, 150) });
+            console.log('Direct click successful');
         } catch (error) {
-            console.log(`Direct click failed: ${error.message}`);
-            // Пробуем альтернативный метод клика
-            await page.evaluate(() => {
-                const button = document.querySelector('.phone_show_link');
-                if (button) {
-                    button.click();
-                }
-            });
+            console.log('Direct click failed, trying alternative methods...');
+            
+            try {
+                // 2. Клик через evaluate
+                await page.evaluate(() => {
+                    const button = document.querySelector('.phone_show_link');
+                    if (button) {
+                        button.click();
+                    }
+                });
+                console.log('Evaluate click successful');
+            } catch (evalError) {
+                console.log('Evaluate click failed, trying dispatch...');
+                
+                // 3. Диспатч события клика
+                await page.evaluate(() => {
+                    const button = document.querySelector('.phone_show_link');
+                    if (button) {
+                        const clickEvent = new MouseEvent('click', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window
+                        });
+                        button.dispatchEvent(clickEvent);
+                    }
+                });
+            }
         }
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
         
         const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
             elements.map(el => el.textContent.trim())
