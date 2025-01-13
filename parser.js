@@ -39,10 +39,10 @@ const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newa
 
 // Size range for random page size
 const MIN_SIZE = 20;
-const MAX_SIZE = 80;
+const MAX_SIZE = 50;
 
 // Update interval (in milliseconds)
-const UPDATE_INTERVAL = 4 * 60 * 1000; // 4 minutes between full update
+const UPDATE_INTERVAL = 8 * 60 * 1000; // 4 minutes between full update
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 30;
