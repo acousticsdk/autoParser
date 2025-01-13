@@ -77,9 +77,10 @@ async function simulateHumanBehavior(page) {
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
     
     // Случайная прокрутка
-    await page.evaluate(() => {
-        window.scrollBy(0, getRandomInt(100, 300));
-    });
+    await page.evaluate((min, max) => {
+        const scrollAmount = Math.floor(Math.random() * (max - min + 1)) + min;
+        window.scrollBy(0, scrollAmount);
+    }, 100, 300);
     
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1000)));
 }
