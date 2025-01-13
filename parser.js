@@ -42,7 +42,7 @@ const MIN_SIZE = 20;
 const MAX_SIZE = 80;
 
 // Update interval (in milliseconds)
-const UPDATE_INTERVAL = 8 * 60 * 1000; // 4 minutes between full update
+const UPDATE_INTERVAL = 4 * 60 * 1000; // 4 minutes between full update
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 30;
@@ -69,55 +69,13 @@ function getRandomDelay(min, max) {
 }
 
 async function simulateHumanBehavior(page) {
-    // Случайная задержка перед действиями
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
-    
-    // Случайные движения мыши
     await page.mouse.move(getRandomInt(100, 700), getRandomInt(100, 500));
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
-    
-    // Случайная прокрутка
-    await page.evaluate((min, max) => {
-        const scrollAmount = Math.floor(Math.random() * (max - min + 1)) + min;
-        window.scrollBy(0, scrollAmount);
-    }, 100, 300);
-    
+    await page.evaluate(() => {
+        window.scrollBy(0, getRandomInt(100, 300));
+    });
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1000)));
-}
-
-async function waitForSelectorWithRetry(page, selector, maxAttempts = 3) {
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-            await page.waitForSelector(selector, { 
-                visible: true, 
-                timeout: 15000 
-            });
-            
-            // Дополнительная проверка на видимость и кликабельность
-            const element = await page.$(selector);
-            if (!element) {
-                throw new Error('Element not found after waiting');
-            }
-            
-            const isVisible = await element.isVisible();
-            if (!isVisible) {
-                throw new Error('Element is not visible');
-            }
-            
-            const box = await element.boundingBox();
-            if (!box) {
-                throw new Error('Element has no bounding box');
-            }
-            
-            return element;
-        } catch (error) {
-            console.log(`Attempt ${attempt}/${maxAttempts} failed: ${error.message}`);
-            if (attempt === maxAttempts) {
-                throw error;
-            }
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-    }
 }
 
 async function tryGetPhoneNumbers(browser, url) {
@@ -149,9 +107,13 @@ async function tryGetPhoneNumbers(browser, url) {
         await simulateHumanBehavior(page);
 
         console.log('Waiting for phone button...');
-        const phoneButton = await waitForSelectorWithRetry(page, '.phone_show_link');
+        await page.waitForSelector('.phone_show_link', { 
+            visible: true, 
+            timeout: 15000 
+        });
         console.log('Phone button found');
 
+        const phoneButton = await page.$('.phone_show_link');
         await page.evaluate(element => {
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, phoneButton);
@@ -162,31 +124,11 @@ async function tryGetPhoneNumbers(browser, url) {
             await phoneButton.click({ delay: getRandomDelay(50, 150) });
             console.log('Direct click successful');
         } catch (error) {
-            console.log('Direct click failed, trying alternative methods...');
-            
-            try {
-                await page.evaluate(() => {
-                    const button = document.querySelector('.phone_show_link');
-                    if (button) {
-                        button.click();
-                    }
-                });
-                console.log('Evaluate click successful');
-            } catch (evalError) {
-                console.log('Evaluate click failed, trying dispatch...');
-                
-                await page.evaluate(() => {
-                    const button = document.querySelector('.phone_show_link');
-                    if (button) {
-                        const clickEvent = new MouseEvent('click', {
-                            bubbles: true,
-                            cancelable: true,
-                            view: window
-                        });
-                        button.dispatchEvent(clickEvent);
-                    }
-                });
-            }
+            console.log('Direct click failed, trying evaluate click...');
+            await page.evaluate(() => {
+                const button = document.querySelector('.phone_show_link');
+                if (button) button.click();
+            });
         }
 
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -195,11 +137,7 @@ async function tryGetPhoneNumbers(browser, url) {
             elements.map(el => el.textContent.trim())
         );
         
-        const hasShowWord = phoneNumbers.some(number => 
-            number.toLowerCase().includes('показати')
-        );
-        
-        if (hasShowWord) {
+        if (phoneNumbers.some(number => number.toLowerCase().includes('показати'))) {
             throw new Error('Phone numbers not revealed');
         }
         
@@ -220,14 +158,13 @@ async function tryGetPhoneNumbers(browser, url) {
     }
 }
 
-async function getPhoneNumber(url, retryCount = 0) {
+async function getPhoneNumber(url) {
     const MAX_RETRIES = 3;
-    const MAX_BROWSER_RETRIES = 2;
     let browser = null;
     
-    for (let browserAttempt = 0; browserAttempt < MAX_BROWSER_RETRIES; browserAttempt++) {
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
-            console.log(`Browser attempt ${browserAttempt + 1}/${MAX_BROWSER_RETRIES}`);
+            console.log(`Attempt ${attempt + 1}/${MAX_RETRIES} to get phone numbers`);
             
             browser = await puppeteer.launch({
                 headless: "new",
@@ -248,7 +185,7 @@ async function getPhoneNumber(url, retryCount = 0) {
             const phoneNumbers = await tryGetPhoneNumbers(browser, url);
             return phoneNumbers;
         } catch (error) {
-            console.error(`Error in browser attempt ${browserAttempt + 1}: ${error.message}`);
+            console.error(`Error in attempt ${attempt + 1}: ${error.message}`);
             
             if (browser) {
                 try {
@@ -258,18 +195,9 @@ async function getPhoneNumber(url, retryCount = 0) {
                 }
             }
             
-            // Если это не последняя попытка с браузером, пробуем еще раз
-            if (browserAttempt < MAX_BROWSER_RETRIES - 1) {
+            if (attempt < MAX_RETRIES - 1) {
                 console.log('Trying with a new browser instance...');
                 await new Promise(resolve => setTimeout(resolve, 5000));
-                continue;
-            }
-            
-            // Если это последняя попытка с браузером, но есть еще попытки ретрая
-            if (retryCount < MAX_RETRIES) {
-                console.log(`Retrying full process... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, 5000));
-                return getPhoneNumber(url, retryCount + 1);
             }
         }
     }
