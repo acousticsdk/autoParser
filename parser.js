@@ -51,6 +51,13 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 const storage = new Storage();
 
 // Helper function to get random integer between min and max (inclusive)
+function getRandomInt(min, max) {
+    min = Math.ceil(min);
+    max = Math.floor(max);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// Helper function to generate random delay
 function getRandomDelay(min, max) {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
