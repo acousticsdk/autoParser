@@ -51,13 +51,6 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 const storage = new Storage();
 
 // Helper function to get random integer between min and max (inclusive)
-function getRandomInt(min, max) {
-    min = Math.ceil(min);
-    max = Math.floor(max);
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// Helper function to generate random delay
 function getRandomDelay(min, max) {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
@@ -67,7 +60,8 @@ async function simulateHumanBehavior(page) {
     await page.mouse.move(getRandomInt(100, 700), getRandomInt(100, 500));
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
     await page.evaluate(() => {
-        window.scrollBy(0, getRandomInt(100, 300));
+        const scrollAmount = Math.floor(Math.random() * 200) + 100; // Random scroll between 100-300
+        window.scrollBy(0, scrollAmount);
     });
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1000)));
 }
@@ -95,7 +89,7 @@ async function tryGetPhoneNumbers(browser, url) {
 
         await page.goto(url, { 
             waitUntil: 'networkidle2',
-            timeout: 30000
+            timeout: 30000 
         });
 
         await simulateHumanBehavior(page);
@@ -153,12 +147,13 @@ async function tryGetPhoneNumbers(browser, url) {
 }
 
 async function getPhoneNumber(url) {
-    const MAX_RETRIES = 3;
-    let browser = null;
+    const MAX_RETRIES = 2;
     
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        let browser = null;
+        
         try {
-            console.log(`Attempt ${attempt + 1}/${MAX_RETRIES} to get phone numbers`);
+            console.log(`Attempt ${attempt + 1}/${MAX_RETRIES + 1} to get phone numbers`);
             
             browser = await puppeteer.launch({
                 headless: "new",
@@ -177,6 +172,11 @@ async function getPhoneNumber(url) {
             });
 
             const phoneNumbers = await tryGetPhoneNumbers(browser, url);
+            
+            if (browser) {
+                await browser.close();
+            }
+            
             return phoneNumbers;
         } catch (error) {
             console.error(`Error in attempt ${attempt + 1}: ${error.message}`);
@@ -189,9 +189,10 @@ async function getPhoneNumber(url) {
                 }
             }
             
-            if (attempt < MAX_RETRIES - 1) {
+            if (attempt < MAX_RETRIES) {
                 console.log('Trying with a new browser instance...');
                 await new Promise(resolve => setTimeout(resolve, 5000));
+                continue;
             }
         }
     }
