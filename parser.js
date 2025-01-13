@@ -246,7 +246,7 @@ async function getPhoneNumber(url, retryCount = 0) {
             return phoneNumbers;
         }
         
-        return ['📞 Телефон на сайті'];
+        return ['Телефон на сайті'];
     } catch (error) {
         console.error(`Error getting phone numbers (attempt ${retryCount + 1}): ${error.message}`);
         if (retryCount < MAX_RETRIES) {
@@ -254,7 +254,7 @@ async function getPhoneNumber(url, retryCount = 0) {
             await new Promise(resolve => setTimeout(resolve, 5000));
             return getPhoneNumber(url, retryCount + 1);
         }
-        return ['📞 Телефон на сайті'];
+        return ['Телефон на сайті'];
     } finally {
         if (page) {
             try {
