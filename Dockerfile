@@ -11,5 +11,5 @@ RUN npm ci
 # Copy project files
 COPY . .
 
-# Start the application
-CMD ["node", "parser.js"]
+# Start the application with garbage collection enabled
+CMD ["node", "--expose-gc", "parser.js"]
