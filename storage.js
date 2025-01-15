@@ -94,8 +94,11 @@ export class Storage {
 
     async savePhoneNumber(phoneNumber, carInfo) {
         try {
+            const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
+            if (!trimmedPhone) return;
+
             await this.db.collection(PHONE_NUMBERS_COLLECTION).insertOne({
-                phoneNumber,
+                phoneNumber: trimmedPhone,
                 carTitle: carInfo.title,
                 carUrl: carInfo.url,
                 parsedAt: new Date()
@@ -108,7 +111,14 @@ export class Storage {
     async getPhoneNumbers() {
         try {
             return await this.db.collection(PHONE_NUMBERS_COLLECTION)
-                .find({})
+                .find({
+                    phoneNumber: { 
+                        $ne: null, 
+                        $ne: '', 
+                        $ne: 'Телефон на сайті',
+                        $regex: /\S/ // Проверяет, что строка содержит хотя бы один непробельный символ
+                    }
+                })
                 .sort({ parsedAt: -1 })
                 .toArray();
         } catch (error) {
@@ -122,8 +132,11 @@ export class Storage {
             // Schedule for next day 9:00
             const nextDay = moment().add(1, 'day').set({ hour: 9, minute: 0, second: 0 });
             
+            const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
+            if (!trimmedPhone) return;
+
             await this.db.collection(PENDING_SMS_COLLECTION).insertOne({
-                phoneNumber,
+                phoneNumber: trimmedPhone,
                 carTitle: carInfo.title,
                 carUrl: carInfo.url,
                 message: "Дякуємо за публікацію автомобіля",
