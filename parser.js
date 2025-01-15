@@ -4,6 +4,7 @@ import moment from 'moment';
 import TelegramBot from 'node-telegram-bot-api';
 import http from 'http';
 import { Storage } from './storage.js';
+import { SMSService } from './smsService.js';
 import { getRandomBrowserProfile } from './browsers.js';
 import puppeteer from 'puppeteer';
 import 'dotenv/config';
@@ -29,11 +30,11 @@ const commonHeaders = {
 };
 
 // URL config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&distance_from_city_km[0]=20&categories.main.id=1&country.import.usa.not=-1&region.id[0]=4&city.id[0]=498&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&page=0';
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&region.id[0]=4&city.id[0]=498&distance_from_city_km[0]=20&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&size=20&brand.id[0].not=88&brand.id[1].not=18&brand.id[2].not=89&categories.main.id=1&price.USD.gte=5000&page=0';
 
 // Size range for random page size
-const MIN_SIZE = 20;
-const MAX_SIZE = 50;
+const MIN_SIZE = 10;
+const MAX_SIZE = 40;
 
 // Update interval (in milliseconds)
 const UPDATE_INTERVAL = 8 * 60 * 1000; // 8 minutes between full update
@@ -41,14 +42,20 @@ const UPDATE_INTERVAL = 8 * 60 * 1000; // 8 minutes between full update
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 30;
 
+// SMS sending time window
+const SMS_START_HOUR = 9;
+const SMS_END_HOUR = 18;
+
+// SMS delay between sends (in milliseconds)
+const SMS_SEND_DELAY = 10000; // 10 seconds
+
 // Telegram limits
 const MAX_MESSAGES_PER_CYCLE = 50;
 
-let allCars = [];
-
-// Initialize Telegram bot with error handling
+// Initialize services
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 const storage = new Storage();
+const smsService = new SMSService();
 
 // Helper function to get random integer between min and max (inclusive)
 function getRandomInt(min, max) {
@@ -67,7 +74,7 @@ async function simulateHumanBehavior(page) {
     await page.mouse.move(getRandomInt(100, 700), getRandomInt(100, 500));
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
     await page.evaluate(() => {
-        const scrollAmount = Math.floor(Math.random() * 200) + 100; // Random scroll between 100-300
+        const scrollAmount = Math.floor(Math.random() * 200) + 100;
         window.scrollBy(0, scrollAmount);
     });
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1000)));
@@ -78,12 +85,10 @@ async function tryGetPhoneNumbers(browser, url) {
     try {
         page = await browser.newPage();
         
-        await page.setDefaultNavigationTimeout(45000);
-        await page.setDefaultTimeout(45000);
-        
+        // Устанавливаем лимиты на использование памяти для страницы
         await page.setRequestInterception(true);
         page.on('request', (request) => {
-            if (['image', 'font'].includes(request.resourceType())) {
+            if (['image', 'font', 'stylesheet', 'media'].includes(request.resourceType())) {
                 request.abort();
             } else {
                 request.continue();
@@ -94,19 +99,18 @@ async function tryGetPhoneNumbers(browser, url) {
         await page.setUserAgent(browserProfile.userAgent);
         await page.setViewport({ width: 1920, height: 1080 });
 
+        // Устанавливаем таймаут для навигации
         await page.goto(url, { 
-            waitUntil: 'networkidle2',
-            timeout: 30000 
+            waitUntil: 'domcontentloaded',
+            timeout: 10000 
         });
 
         await simulateHumanBehavior(page);
 
-        console.log('Waiting for phone button...');
         await page.waitForSelector('.phone_show_link', { 
             visible: true, 
             timeout: 15000 
         });
-        console.log('Phone button found');
 
         const phoneButton = await page.$('.phone_show_link');
         await page.evaluate(element => {
@@ -117,9 +121,7 @@ async function tryGetPhoneNumbers(browser, url) {
 
         try {
             await phoneButton.click({ delay: getRandomDelay(50, 150) });
-            console.log('Direct click successful');
         } catch (error) {
-            console.log('Direct click failed, trying evaluate click...');
             await page.evaluate(() => {
                 const button = document.querySelector('.phone_show_link');
                 if (button) button.click();
@@ -137,8 +139,7 @@ async function tryGetPhoneNumbers(browser, url) {
         }
         
         if (phoneNumbers.length > 0) {
-            console.log('Phone numbers found:', phoneNumbers.length);
-            return phoneNumbers;
+            return [phoneNumbers[0]];
         }
         
         throw new Error('No phone numbers found');
@@ -146,6 +147,7 @@ async function tryGetPhoneNumbers(browser, url) {
         if (page) {
             try {
                 await page.close();
+                global.gc && global.gc();
             } catch (e) {
                 console.error('Error closing page:', e.message);
             }
@@ -160,8 +162,6 @@ async function getPhoneNumber(url) {
         let browser = null;
         
         try {
-            console.log(`Attempt ${attempt + 1}/${MAX_RETRIES + 1} to get phone numbers`);
-            
             browser = await puppeteer.launch({
                 headless: "new",
                 args: [
@@ -174,7 +174,8 @@ async function getPhoneNumber(url) {
                     '--memory-pressure-off',
                     '--single-process',
                     '--no-zygote',
-                    '--window-size=1920,1080'
+                    '--window-size=1920,1080',
+                    '--js-flags="--max-old-space-size=256"'
                 ]
             });
 
@@ -197,7 +198,6 @@ async function getPhoneNumber(url) {
             }
             
             if (attempt < MAX_RETRIES) {
-                console.log('Trying with a new browser instance...');
                 await new Promise(resolve => setTimeout(resolve, 5000));
                 continue;
             }
@@ -207,33 +207,48 @@ async function getPhoneNumber(url) {
     return ['Телефон на сайті'];
 }
 
-async function sendToTelegram(car) {
-    if (!await storage.isCarSent(car.url)) {
-        const addedTime = car.date.format('HH:mm');
-        
-        try {
-            console.log(`Getting phone numbers for: ${car.title}`);
-            const phoneNumbers = await getPhoneNumber(car.url);
-            
-            let phoneInfo = '';
-            if (phoneNumbers.length === 1) {
-                phoneInfo = `\n📞 ${phoneNumbers[0]}`;
-            } else if (phoneNumbers.length > 1) {
-                phoneInfo = '\n' + phoneNumbers.map(phone => `📞 ${phone}`).join('\n');
-            }
-            
-            const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
+async function handlePhoneNumbers(phoneNumbers, car) {
+    const phoneNumber = phoneNumbers[0];
+    await storage.savePhoneNumber(phoneNumber, car);
 
-            await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
-            await storage.markCarAsSent(car.url);
-            console.log(`✓ Sent to Telegram: ${car.title} (${addedTime})`);
-            return true;
-        } catch (error) {
-            console.error('Error sending to Telegram:', error.message);
-            return false;
+    const currentHour = moment().hour();
+    
+    if (currentHour >= SMS_START_HOUR && currentHour < SMS_END_HOUR) {
+        const result = await smsService.sendSMS([phoneNumber], "Дякуємо за публікацію автомобіля");
+        if (result) {
+            console.log(`✓ SMS sent immediately to ${phoneNumber} for car: ${car.title}`);
         }
+    } else {
+        await storage.addPendingSMS(phoneNumber, car);
+        console.log(`✓ SMS scheduled for next day 9:00 for ${phoneNumber} (car: ${car.title})`);
     }
-    return false;
+}
+
+async function processPendingSMS() {
+    try {
+        const pendingSMS = await storage.getPendingSMSToSend();
+        if (pendingSMS.length === 0) return;
+
+        console.log(`\nProcessing ${pendingSMS.length} pending SMS messages...`);
+        
+        for (const sms of pendingSMS) {
+            const result = await smsService.sendSMS([sms.phoneNumber], sms.message);
+            
+            if (result) {
+                await storage.removePendingSMS([sms._id]);
+                console.log(`✓ Pending SMS sent to ${sms.phoneNumber} for car: ${sms.carTitle}`);
+                
+                if (pendingSMS.indexOf(sms) < pendingSMS.length - 1) {
+                    console.log('Waiting 10 seconds before sending next SMS...');
+                    await new Promise(resolve => setTimeout(resolve, SMS_SEND_DELAY));
+                }
+            }
+        }
+        
+        console.log('✓ Finished processing pending SMS messages');
+    } catch (error) {
+        console.error('Error processing pending SMS:', error);
+    }
 }
 
 async function parsePage() {
@@ -275,11 +290,14 @@ async function parsePage() {
         const finalUrl = `${urlWithParams}&${sessionParams.toString()}`;
         const response = await axiosInstance.get(finalUrl);
 
-        console.log('Waiting for page to load completely...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
         console.log('Processing page content...');
 
-        const $ = cheerio.load(response.data);
+        const $ = cheerio.load(response.data, {
+            decodeEntities: false,
+            xmlMode: false,
+            lowerCaseTags: true
+        });
+        
         const cars = [];
         let carCount = 0;
 
@@ -293,12 +311,14 @@ async function parsePage() {
 
             if (dateStr && url && title) {
                 const parsedDate = moment(dateStr);
-                cars.push({
+                const car = {
                     date: parsedDate,
                     url,
                     title,
                     price: price || 'Ціна не вказана'
-                });
+                };
+                cars.push(car);
+               
                 carCount++;
             }
         });
@@ -315,13 +335,44 @@ async function parsePage() {
     }
 }
 
-async function processNewCars() {
-    const now = moment();
-    const freshThreshold = now.subtract(FRESH_LISTING_THRESHOLD, 'minutes');
-    
-    const newCars = allCars.filter(car => car.date.isAfter(freshThreshold));
+async function sendToTelegram(car) {
+    if (!await storage.isCarSent(car.url)) {
+        
+        const addedTime = car.date.format('HH:mm');
+        
+        try {
+            const phoneNumbers = await getPhoneNumber(car.url);
+            
+            await handlePhoneNumbers(phoneNumbers, car);
+            
+            let phoneInfo = '';
+            if (phoneNumbers.length === 1) {
+                phoneInfo = `\n📞 ${phoneNumbers[0]}`;
+            } else if (phoneNumbers.length > 1) {
+                phoneInfo = '\n' + phoneNumbers.map(phone => `📞 ${phone}`).join('\n');
+            }
+            
+            const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
 
-    console.log(`\nFound ${newCars.length} fresh listings`);
+            await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
+            await storage.markCarAsSent(car.url);
+            console.log(`✓ Sent to Telegram: ${car.title} (${addedTime})`);
+            return true;
+        } catch (error) {
+            console.error('Error sending to Telegram:', error);
+            return false;
+        }
+    }
+    return false;
+}
+
+async function processNewCars(cars) {
+    const freshThreshold = moment().subtract(FRESH_LISTING_THRESHOLD, 'minutes');
+    
+    const newCars = cars.filter(car => {
+        const isFresh = car.date.isAfter(freshThreshold);
+        return isFresh;
+    });
 
     if (newCars.length > 0) {
         console.log('\nProcessing new cars...');
@@ -335,9 +386,8 @@ async function processNewCars() {
         if (await sendToTelegram(car)) {
             sentCount++;
         }
+        global.gc && global.gc();
     }
-
-    console.log(`Successfully sent ${sentCount} messages`);
 
     if (newCars.length > MAX_MESSAGES_PER_CYCLE) {
         console.log(`Limiting messages to ${MAX_MESSAGES_PER_CYCLE}. ${newCars.length - MAX_MESSAGES_PER_CYCLE} cars will be processed in the next cycle.`);
@@ -345,58 +395,25 @@ async function processNewCars() {
 }
 
 async function runGarbageCollection() {
-    console.log('\nChecking garbage collection availability...');
-    
     if (typeof global.gc === 'undefined') {
         console.log('Garbage collection is not enabled. To enable, run Node.js with --expose-gc flag');
-        console.log('Current Node.js flags:', process.execArgv);
         return;
     }
     
-    try {
-        const memoryBefore = process.memoryUsage();
-        console.log('Memory usage before GC:');
-        console.log('  - Heap used:', Math.round(memoryBefore.heapUsed / 1024 / 1024), 'MB');
-        console.log('  - Heap total:', Math.round(memoryBefore.heapTotal / 1024 / 1024), 'MB');
-        console.log('  - RSS:', Math.round(memoryBefore.rss / 1024 / 1024), 'MB');
-        
-        console.log('\nRunning garbage collection...');
-        global.gc();
-        
-        const memoryAfter = process.memoryUsage();
-        console.log('\nMemory usage after GC:');
-        console.log('  - Heap used:', Math.round(memoryAfter.heapUsed / 1024 / 1024), 'MB');
-        console.log('  - Heap total:', Math.round(memoryAfter.heapTotal / 1024 / 1024), 'MB');
-        console.log('  - RSS:', Math.round(memoryAfter.rss / 1024 / 1024), 'MB');
-        
-        const freed = {
-            heapUsed: memoryBefore.heapUsed - memoryAfter.heapUsed,
-            heapTotal: memoryBefore.heapTotal - memoryAfter.heapTotal,
-            rss: memoryBefore.rss - memoryAfter.rss
-        };
-        
-        console.log('\nMemory freed:');
-        console.log('  - Heap used:', Math.round(freed.heapUsed / 1024 / 1024), 'MB');
-        console.log('  - Heap total:', Math.round(freed.heapTotal / 1024 / 1024), 'MB');
-        console.log('  - RSS:', Math.round(freed.rss / 1024 / 1024), 'MB');
-        
-        console.log('\nGarbage collection completed successfully');
-    } catch (error) {
-        console.error('Error during garbage collection:', error);
-    }
-}
+    global.gc();
+} 
 
 async function updateData() {
     try {
         console.log(`\n${moment().format('HH:mm')} - Starting update...`);
+        
+        await processPendingSMS();
+        
         const cars = await parsePage();
         if (cars.length > 0) {
-            allCars = cars;
-            await processNewCars();
-            allCars = []; // Очищаем массив после обработки
+            await processNewCars(cars);
             
-            // Запускаем сборщик мусора через 60 секунд после завершения цикла
-            setTimeout(runGarbageCollection, 60000);
+            setTimeout(runGarbageCollection, 30000);
         } else {
             console.log('No cars found in this update');
         }
@@ -406,7 +423,6 @@ async function updateData() {
 }
 
 async function startParsing() {
-    console.log('Parser started');
     try {
         await storage.load();
         await updateData();
