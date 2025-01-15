@@ -105,6 +105,18 @@ export class Storage {
         }
     }
 
+    async getPhoneNumbers() {
+        try {
+            return await this.db.collection(PHONE_NUMBERS_COLLECTION)
+                .find({})
+                .sort({ parsedAt: -1 })
+                .toArray();
+        } catch (error) {
+            console.error('Error getting phone numbers:', error);
+            return [];
+        }
+    }
+
     async addPendingSMS(phoneNumber, carInfo) {
         try {
             // Schedule for next day 9:00

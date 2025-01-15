@@ -102,7 +102,7 @@ async function tryGetPhoneNumbers(browser, url) {
         // Устанавливаем таймаут для навигации
         await page.goto(url, { 
             waitUntil: 'domcontentloaded',
-            timeout: 10000 
+            timeout: 30000 
         });
 
         await simulateHumanBehavior(page);
@@ -439,9 +439,82 @@ async function startParsing() {
 }
 
 // Create HTTP server
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Parser is running');
+const server = http.createServer(async (req, res) => {
+    if (req.url === '/database') {
+        try {
+            const phoneNumbers = await storage.getPhoneNumbers();
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            
+            let html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Phone Numbers Database</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            margin: 20px;
+                            background-color: #f5f5f5;
+                        }
+                        table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            background-color: white;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                        }
+                        th, td {
+                            padding: 12px;
+                            text-align: left;
+                            border-bottom: 1px solid #ddd;
+                        }
+                        th {
+                            background-color: #4CAF50;
+                            color: white;
+                        }
+                        tr:hover {
+                            background-color: #f5f5f5;
+                        }
+                        .date {
+                            color: #666;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Phone Numbers Database</h1>
+                    <table>
+                        <tr>
+                            <th>Car Title</th>
+                            <th>Phone Number</th>
+                            <th>Date</th>
+                        </tr>
+            `;
+            
+            for (const record of phoneNumbers) {
+                const date = moment(record.parsedAt).format('DD.MM.YYYY HH:mm');
+                html += `
+                    <tr>
+                        <td>${record.carTitle}</td>
+                        <td>${record.phoneNumber}</td>
+                        <td class="date">${date}</td>
+                    </tr>
+                `;
+            }
+            
+            html += `
+                    </table>
+                </body>
+                </html>
+            `;
+            
+            res.end(html);
+        } catch (error) {
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end('Internal Server Error');
+        }
+    } else {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('Parser is running');
+    }
 });
 
 const port = process.env.PORT || 3000;
