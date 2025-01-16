@@ -113,22 +113,35 @@ export class Storage {
         }
     }
 
-    async getPhoneNumbers() {
+    async getPhoneNumbers(skip = 0, limit = 50) {
         try {
-            return await this.db.collection(PHONE_NUMBERS_COLLECTION)
+            const totalCount = await this.db.collection(PHONE_NUMBERS_COLLECTION).countDocuments({
+                phoneNumber: { 
+                    $ne: null, 
+                    $ne: '', 
+                    $ne: 'Телефон на сайті',
+                    $regex: /\S/
+                }
+            });
+            
+            const phoneNumbers = await this.db.collection(PHONE_NUMBERS_COLLECTION)
                 .find({
                     phoneNumber: { 
                         $ne: null, 
                         $ne: '', 
                         $ne: 'Телефон на сайті',
-                        $regex: /\S/ // Проверяет, что строка содержит хотя бы один непробельный символ
+                        $regex: /\S/
                     }
                 })
                 .sort({ parsedAt: -1 })
+                .skip(skip)
+                .limit(limit)
                 .toArray();
+                
+            return { phoneNumbers, totalCount };
         } catch (error) {
             console.error('Error getting phone numbers:', error);
-            return [];
+            return { phoneNumbers: [], totalCount: 0 };
         }
     }
 

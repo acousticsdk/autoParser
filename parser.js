@@ -30,7 +30,7 @@ const commonHeaders = {
 };
 
 // URL config
-const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&region.id[0]=4&city.id[0]=498&distance_from_city_km[0]=100&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&brand.id[0].not=88&brand.id[1].not=18&brand.id[2].not=89&categories.main.id=1&price.USD.gte=5000&page=0';
+const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&region.id[0]=4&city.id[0]=498&distance_from_city_km[0]=20&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&brand.id[0].not=88&brand.id[1].not=18&brand.id[2].not=89&categories.main.id=1&price.USD.gte=5000&page=0';
 
 // Size range for random page size
 const MIN_SIZE = 10;
@@ -43,14 +43,17 @@ const UPDATE_INTERVAL = 8 * 60 * 1000; // 8 minutes between full update
 const FRESH_LISTING_THRESHOLD = 30;
 
 // SMS sending time window
-const SMS_START_HOUR = 18;
-const SMS_END_HOUR = 19;
+const SMS_START_HOUR = 9;
+const SMS_END_HOUR = 18;
 
 // SMS delay between sends (in milliseconds)
-const SMS_SEND_DELAY = 10000; // 10 seconds
+const SMS_SEND_DELAY = 3000; // 3 seconds
 
 // Telegram limits
 const MAX_MESSAGES_PER_CYCLE = 50;
+
+// Database pagination
+const ITEMS_PER_PAGE = 50;
 
 // Initialize services
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -260,7 +263,7 @@ async function processPendingSMS() {
                 console.log(`✓ Pending SMS sent to ${sms.phoneNumber} for car: ${sms.carTitle}`);
                 
                 if (pendingSMS.indexOf(sms) < pendingSMS.length - 1) {
-                    console.log('Waiting 10 seconds before sending next SMS...');
+                    console.log('Waiting 3 seconds before sending next SMS...');
                     await new Promise(resolve => setTimeout(resolve, SMS_SEND_DELAY));
                 }
             }
@@ -460,9 +463,15 @@ async function startParsing() {
 
 // Create HTTP server
 const server = http.createServer(async (req, res) => {
-    if (req.url === '/database') {
+    if (req.url.startsWith('/database')) {
         try {
-            const phoneNumbers = await storage.getPhoneNumbers();
+            const urlParams = new URL(req.url, `http://${req.headers.host}`);
+            const page = parseInt(urlParams.searchParams.get('page')) || 1;
+            const skip = (page - 1) * ITEMS_PER_PAGE;
+            
+            const { phoneNumbers, totalCount } = await storage.getPhoneNumbers(skip, ITEMS_PER_PAGE);
+            const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+            
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
             
             let html = `
@@ -481,6 +490,7 @@ const server = http.createServer(async (req, res) => {
                             border-collapse: collapse;
                             background-color: white;
                             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                            margin-bottom: 20px;
                         }
                         th, td {
                             padding: 12px;
@@ -496,6 +506,31 @@ const server = http.createServer(async (req, res) => {
                         }
                         .date {
                             color: #666;
+                        }
+                        .pagination {
+                            display: flex;
+                            justify-content: center;
+                            gap: 10px;
+                            margin-top: 20px;
+                        }
+                        .pagination a {
+                            padding: 8px 16px;
+                            text-decoration: none;
+                            background-color: white;
+                            border: 1px solid #ddd;
+                            color: black;
+                        }
+                        .pagination a:hover {
+                            background-color: #ddd;
+                        }
+                        .pagination .active {
+                            background-color: #4CAF50;
+                            color: white;
+                            border: 1px solid #4CAF50;
+                        }
+                        .pagination .disabled {
+                            color: #ddd;
+                            pointer-events: none;
                         }
                     </style>
                 </head>
@@ -522,6 +557,31 @@ const server = http.createServer(async (req, res) => {
             
             html += `
                     </table>
+                    <div class="pagination">
+            `;
+            
+            // Add pagination links
+            if (page > 1) {
+                html += `<a href="/database?page=1">&laquo; First</a>`;
+                html += `<a href="/database?page=${page - 1}">Previous</a>`;
+            } else {
+                html += `<a class="disabled">&laquo; First</a>`;
+                html += `<a class="disabled">Previous</a>`;
+            }
+            
+            // Show current page and total pages
+            html += `<a class="active">Page ${page} of ${totalPages}</a>`;
+            
+            if (page < totalPages) {
+                html += `<a href="/database?page=${page + 1}">Next</a>`;
+                html += `<a href="/database?page=${totalPages}">Last &raquo;</a>`;
+            } else {
+                html += `<a class="disabled">Next</a>`;
+                html += `<a class="disabled">Last &raquo;</a>`;
+            }
+            
+            html += `
+                    </div>
                 </body>
                 </html>
             `;
