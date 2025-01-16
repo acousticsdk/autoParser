@@ -33,7 +33,7 @@ const commonHeaders = {
 const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&region.id[0]=4&city.id[0]=498&distance_from_city_km[0]=20&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&brand.id[0].not=88&brand.id[1].not=18&brand.id[2].not=89&categories.main.id=1&price.USD.gte=5000&page=0';
 
 // Size range for random page size
-const MIN_SIZE = 10;
+const MIN_SIZE = 11;
 const MAX_SIZE = 40;
 
 // Update interval (in milliseconds)
@@ -86,6 +86,7 @@ async function simulateHumanBehavior(page) {
 async function tryGetPhoneNumbers(browser, url) {
     let page = null;
     try {
+        console.log(`Attempting to get phone numbers for URL: ${url}`);
         page = await browser.newPage();
         
         // Устанавливаем лимиты на использование памяти для страницы
@@ -102,14 +103,17 @@ async function tryGetPhoneNumbers(browser, url) {
         await page.setUserAgent(browserProfile.userAgent);
         await page.setViewport({ width: 1920, height: 1080 });
 
+        console.log('Navigating to page...');
         // Устанавливаем таймаут для навигации
         await page.goto(url, { 
             waitUntil: 'domcontentloaded',
             timeout: 30000 
         });
 
+        console.log('Simulating human behavior...');
         await simulateHumanBehavior(page);
 
+        console.log('Waiting for phone button...');
         await page.waitForSelector('.phone_show_link', { 
             visible: true, 
             timeout: 15000 
@@ -122,15 +126,18 @@ async function tryGetPhoneNumbers(browser, url) {
 
         await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
 
+        console.log('Clicking phone button...');
         try {
             await phoneButton.click({ delay: getRandomDelay(50, 150) });
         } catch (error) {
+            console.log('Direct click failed, trying alternative method...');
             await page.evaluate(() => {
                 const button = document.querySelector('.phone_show_link');
                 if (button) button.click();
             });
         }
 
+        console.log('Waiting for phone numbers to appear...');
         await new Promise(resolve => setTimeout(resolve, 3000));
         
         const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
@@ -142,13 +149,18 @@ async function tryGetPhoneNumbers(browser, url) {
         }
         
         if (phoneNumbers.length > 0) {
+            console.log(`Successfully retrieved phone numbers: ${phoneNumbers[0]}`);
             return [phoneNumbers[0]];
         }
         
         throw new Error('No phone numbers found');
+    } catch (error) {
+        console.error(`Error in tryGetPhoneNumbers: ${error.message}`);
+        throw error;
     } finally {
         if (page) {
             try {
+                console.log('Closing page...');
                 await page.close();
                 global.gc && global.gc();
             } catch (e) {
@@ -165,6 +177,7 @@ async function getPhoneNumber(url) {
         let browser = null;
         
         try {
+            console.log(`Starting attempt ${attempt + 1}/${MAX_RETRIES + 1} to get phone number...`);
             browser = await puppeteer.launch({
                 headless: "new",
                 args: [
@@ -182,10 +195,11 @@ async function getPhoneNumber(url) {
                 ]
             });
           
-
+            console.log('Browser launched successfully');
             const phoneNumbers = await tryGetPhoneNumbers(browser, url);
             
             if (browser) {
+                console.log('Closing browser...');
                 await browser.close();
             }
             
@@ -195,6 +209,7 @@ async function getPhoneNumber(url) {
             
             if (browser) {
                 try {
+                    console.log('Closing browser after error...');
                     await browser.close();
                 } catch (e) {
                     console.error('Error closing browser:', e.message);
@@ -202,12 +217,14 @@ async function getPhoneNumber(url) {
             }
             
             if (attempt < MAX_RETRIES) {
+                console.log(`Waiting 5 seconds before retry ${attempt + 2}...`);
                 await new Promise(resolve => setTimeout(resolve, 5000));
                 continue;
             }
         }
     }
     
+    console.log('All attempts failed, returning default phone message');
     return ['Телефон на сайті'];
 }
 
@@ -360,12 +377,14 @@ async function parsePage() {
 
 async function sendToTelegram(car) {
     if (!await storage.isCarSent(car.url)) {
-        
+        console.log(`\nProcessing car: ${car.title}`);
         const addedTime = car.date.format('HH:mm');
         
         try {
+            console.log('Getting phone number...');
             const phoneNumbers = await getPhoneNumber(car.url);
             
+            console.log('Handling phone numbers...');
             await handlePhoneNumbers(phoneNumbers, car);
             
             let phoneInfo = '';
@@ -375,6 +394,7 @@ async function sendToTelegram(car) {
                 phoneInfo = '\n' + phoneNumbers.map(phone => `📞 ${phone}`).join('\n');
             }
             
+            console.log('Sending to Telegram...');
             const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
 
             await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
@@ -398,19 +418,25 @@ async function processNewCars(cars) {
     });
 
     if (newCars.length > 0) {
-        console.log('\nProcessing new cars...');
+        console.log(`\nProcessing new cars... Found ${newCars.length} fresh listings`);
     }
 
+    console.log('Sorting cars by date...');
     const sortedCars = [...newCars].sort((a, b) => a.date - b.date);
     const carsToProcess = sortedCars.slice(0, MAX_MESSAGES_PER_CYCLE);
+    console.log(`Will process ${carsToProcess.length} cars in this cycle`);
+    
     let sentCount = 0;
     
     for (const car of carsToProcess) {
         if (await sendToTelegram(car)) {
             sentCount++;
+            console.log(`Progress: ${sentCount}/${carsToProcess.length} cars processed`);
         }
         global.gc && global.gc();
     }
+
+    console.log(`\nFinished processing cars. Successfully sent: ${sentCount}/${carsToProcess.length}`);
 
     if (newCars.length > MAX_MESSAGES_PER_CYCLE) {
         console.log(`Limiting messages to ${MAX_MESSAGES_PER_CYCLE}. ${newCars.length - MAX_MESSAGES_PER_CYCLE} cars will be processed in the next cycle.`);
