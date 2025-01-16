@@ -211,21 +211,35 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     const phoneNumber = phoneNumbers[0];
     console.log(`Processing phone number for car ${car.title}: ${phoneNumber}`);
     
-    await storage.savePhoneNumber(phoneNumber, car);
+    const saveResult = await storage.savePhoneNumber(phoneNumber, car);
+    if (!saveResult) {
+        console.log(`Skipping SMS handling for invalid phone number: ${phoneNumber}`);
+        return;
+    }
 
     const currentHour = moment().hour();
-    
-    if (currentHour >= SMS_START_HOUR && currentHour < SMS_END_HOUR) {
+    const currentTime = moment();
+    const nextSendTime = moment();
+
+    // Если текущее время вне разрешенного диапазона
+    if (currentHour < SMS_START_HOUR || currentHour >= SMS_END_HOUR) {
+        // Если сейчас ночь (после 18:00), отправляем на следующий день в 9:00
+        if (currentHour >= SMS_END_HOUR) {
+            nextSendTime.add(1, 'day');
+        }
+        // Устанавливаем время отправки на 9:00
+        nextSendTime.set({ hour: SMS_START_HOUR, minute: 0, second: 0 });
+
+        const result = await storage.addPendingSMS(phoneNumber, car, nextSendTime.toDate());
+        if (result) {
+            console.log(`✓ SMS scheduled for ${nextSendTime.format('DD.MM.YYYY HH:mm')} for ${phoneNumber} (car: ${car.title})`);
+        } else {
+            console.log(`✗ Failed to schedule SMS for ${phoneNumber} (car: ${car.title})`);
+        }
+    } else {
         const result = await smsService.sendSMS([phoneNumber], "Дякуємо за публікацію автомобіля");
         if (result) {
             console.log(`✓ SMS sent immediately to ${phoneNumber} for car: ${car.title}`);
-        }
-    } else {
-        const result = await storage.addPendingSMS(phoneNumber, car);
-        if (result) {
-            console.log(`✓ SMS scheduled for next day 9:00 for ${phoneNumber} (car: ${car.title})`);
-        } else {
-            console.log(`✗ Failed to schedule SMS for ${phoneNumber} (car: ${car.title})`);
         }
     }
 }

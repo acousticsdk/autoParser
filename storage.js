@@ -132,14 +132,20 @@ export class Storage {
         }
     }
 
-    async addPendingSMS(phoneNumber, carInfo) {
+    async addPendingSMS(phoneNumber, carInfo, scheduledFor) {
         try {
-            // Schedule for next day 9:00
-            const nextDay = moment().add(1, 'day').set({ hour: 9, minute: 0, second: 0 });
-            
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
             if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
                 console.log(`Skipping pending SMS for invalid phone number (car: ${carInfo.title})`);
+                return false;
+            }
+
+            // Проверяем, нет ли уже запланированного SMS для этого номера
+            const existingPendingSMS = await this.db.collection(PENDING_SMS_COLLECTION)
+                .findOne({ phoneNumber: trimmedPhone });
+
+            if (existingPendingSMS) {
+                console.log(`SMS already scheduled for ${trimmedPhone}`);
                 return false;
             }
 
@@ -148,7 +154,7 @@ export class Storage {
                 carTitle: carInfo.title,
                 carUrl: carInfo.url,
                 message: "Дякуємо за публікацію автомобіля",
-                scheduledFor: nextDay.toDate(),
+                scheduledFor: scheduledFor,
                 createdAt: new Date()
             });
             return true;
