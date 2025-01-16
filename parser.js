@@ -209,6 +209,8 @@ async function getPhoneNumber(url) {
 
 async function handlePhoneNumbers(phoneNumbers, car) {
     const phoneNumber = phoneNumbers[0];
+    console.log(`Processing phone number for car ${car.title}: ${phoneNumber}`);
+    
     await storage.savePhoneNumber(phoneNumber, car);
 
     const currentHour = moment().hour();
@@ -219,8 +221,12 @@ async function handlePhoneNumbers(phoneNumbers, car) {
             console.log(`✓ SMS sent immediately to ${phoneNumber} for car: ${car.title}`);
         }
     } else {
-        await storage.addPendingSMS(phoneNumber, car);
-        console.log(`✓ SMS scheduled for next day 9:00 for ${phoneNumber} (car: ${car.title})`);
+        const result = await storage.addPendingSMS(phoneNumber, car);
+        if (result) {
+            console.log(`✓ SMS scheduled for next day 9:00 for ${phoneNumber} (car: ${car.title})`);
+        } else {
+            console.log(`✗ Failed to schedule SMS for ${phoneNumber} (car: ${car.title})`);
+        }
     }
 }
 

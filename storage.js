@@ -95,7 +95,10 @@ export class Storage {
     async savePhoneNumber(phoneNumber, carInfo) {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
-            if (!trimmedPhone) return;
+            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+                console.log(`Skipping invalid phone number for car: ${carInfo.title}`);
+                return false;
+            }
 
             await this.db.collection(PHONE_NUMBERS_COLLECTION).insertOne({
                 phoneNumber: trimmedPhone,
@@ -103,8 +106,10 @@ export class Storage {
                 carUrl: carInfo.url,
                 parsedAt: new Date()
             });
+            return true;
         } catch (error) {
             console.error('Error saving phone number:', error);
+            return false;
         }
     }
 
@@ -133,7 +138,10 @@ export class Storage {
             const nextDay = moment().add(1, 'day').set({ hour: 9, minute: 0, second: 0 });
             
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
-            if (!trimmedPhone) return;
+            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+                console.log(`Skipping pending SMS for invalid phone number (car: ${carInfo.title})`);
+                return false;
+            }
 
             await this.db.collection(PENDING_SMS_COLLECTION).insertOne({
                 phoneNumber: trimmedPhone,
@@ -143,8 +151,10 @@ export class Storage {
                 scheduledFor: nextDay.toDate(),
                 createdAt: new Date()
             });
+            return true;
         } catch (error) {
             console.error('Error adding pending SMS:', error);
+            return false;
         }
     }
 
