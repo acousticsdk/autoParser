@@ -44,7 +44,7 @@ const FRESH_LISTING_THRESHOLD = 30;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
-const SMS_END_HOUR = 12;
+const SMS_END_HOUR = 18;
 
 // SMS delay between sends (in milliseconds)
 const SMS_SEND_DELAY = 10000; // 10 seconds
@@ -178,6 +178,7 @@ async function getPhoneNumber(url) {
                     '--js-flags="--max-old-space-size=256"'
                 ]
             });
+          
 
             const phoneNumbers = await tryGetPhoneNumbers(browser, url);
             
@@ -280,8 +281,7 @@ async function parsePage() {
         const urlWithParams = `${BASE_URL}&size=${randomSize}&_=${timestamp}&nocache=${randomParam}`;
         
         const browserProfile = getRandomBrowserProfile();
-        console.log(`Using browser: ${browserProfile.name} ${browserProfile.version}`);
-        console.log(`Using random page size: ${randomSize}`);
+        
         
         const axiosInstance = axios.create({
             headers: {
