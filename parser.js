@@ -44,7 +44,7 @@ const FRESH_LISTING_THRESHOLD = 30;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
-const SMS_END_HOUR = 18;
+const SMS_END_HOUR = 12;
 
 // SMS delay between sends (in milliseconds)
 const SMS_SEND_DELAY = 10000; // 10 seconds
