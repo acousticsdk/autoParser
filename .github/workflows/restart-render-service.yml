@@ -16,4 +16,4 @@ jobs:
           curl -X POST \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
-            https://api.render.com/v1/services/srv-cu184j56l47c73a1drm0/restart
+            https://api.render.com/v1/services/srv-cu571tbtq21c73e1paa0/restart
