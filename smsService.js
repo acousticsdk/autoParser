@@ -3,7 +3,7 @@ import axios from 'axios';
 export class SMSService {
     constructor() {
         this.token = 'WvY_VaI-6iXSWRn';
-        this.sender = 'AUTO';
+        this.sender = 'AUTODEALER';
         this.baseUrl = 'https://im.smsclub.mobi/sms/send';
     }
 
