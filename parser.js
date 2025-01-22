@@ -258,7 +258,7 @@ async function handlePhoneNumbers(phoneNumbers, car) {
             console.log(`✗ Failed to schedule SMS for ${phoneNumber} (car: ${car.title})`);
         }
     } else {
-        const result = await smsService.sendSMS([phoneNumber], "Дякуємо за публікацію автомобіля");
+        const result = await smsService.sendSMS([phoneNumber], "Продайте авто швидко та вигідно! Майданчик у Кам’янці-Подільському, просп. Грушевського, 1А. Все просто: професійна оцінка, реклама, швидкий продаж! Телефонуйте: 0976385883. Менеджер зв’яжеться з вами найближчим часом!");
         if (result) {
             console.log(`✓ SMS sent immediately to ${phoneNumber} for car: ${car.title}`);
         }
