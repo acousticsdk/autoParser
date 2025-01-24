@@ -6,6 +6,7 @@ import http from 'http';
 import { Storage } from './storage.js';
 import { SMSService } from './smsService.js';
 import { getRandomBrowserProfile } from './browsers.js';
+import { postToTelegram } from './postingService.js';
 import puppeteer from 'puppeteer';
 import 'dotenv/config';
 
@@ -258,7 +259,7 @@ async function handlePhoneNumbers(phoneNumbers, car) {
             console.log(`✗ Failed to schedule SMS for ${phoneNumber} (car: ${car.title})`);
         }
     } else {
-        const result = await smsService.sendSMS([phoneNumber], "Продайте авто швидко та вигідно! Майданчик у Кам’янці-Подільському, просп. Грушевського, 1А. Все просто: професійна оцінка, реклама, швидкий продаж! Телефонуйте: 0988210707. Менеджер зв’яжеться з вами найближчим часом!");
+        const result = await smsService.sendSMS([phoneNumber], "Продайте авто швидко та вигідно! Майданчик у Кам'янці-Подільському, просп. Грушевського, 1А. Все просто: професійна оцінка, реклама, швидкий продаж! Телефонуйте: 0988210707. Менеджер зв'яжеться з вами найближчим часом!");
         if (result) {
             console.log(`✓ SMS sent immediately to ${phoneNumber} for car: ${car.title}`);
         }
@@ -387,6 +388,12 @@ async function sendToTelegram(car) {
             console.log('Handling phone numbers...');
             await handlePhoneNumbers(phoneNumbers, car);
             
+            // Start posting to the second Telegram channel in parallel
+            const postingPromise = postToTelegram(car.url).catch(error => {
+                console.error('Error posting to second Telegram channel:', error);
+                return false;
+            });
+            
             let phoneInfo = '';
             if (phoneNumbers.length === 1) {
                 phoneInfo = `\n📞 ${phoneNumbers[0]}`;
@@ -394,10 +401,17 @@ async function sendToTelegram(car) {
                 phoneInfo = '\n' + phoneNumbers.map(phone => `📞 ${phone}`).join('\n');
             }
             
-            console.log('Sending to Telegram...');
+            console.log('Sending to main Telegram channel...');
             const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
 
             await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
+            
+            // Wait for the posting to complete, but don't block if it fails
+            const postingResult = await postingPromise;
+            if (postingResult) {
+                console.log('✓ Successfully posted to second Telegram channel');
+            }
+            
             await storage.markCarAsSent(car.url);
             console.log(`✓ Sent to Telegram: ${car.title} (${addedTime})`);
             return true;
@@ -492,7 +506,7 @@ const server = http.createServer(async (req, res) => {
     if (req.url.startsWith('/database')) {
         try {
             const urlParams = new URL(req.url, `http://${req.headers.host}`);
-            const page = parseInt(urlParams.searchParams.get('page')) || 1;
+            const page = parseInt(urlParams.searchParams.get('page ')) || 1;
             const skip = (page - 1) * ITEMS_PER_PAGE;
             
             const { phoneNumbers, totalCount } = await storage.getPhoneNumbers(skip, ITEMS_PER_PAGE);
