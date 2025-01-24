@@ -54,7 +54,7 @@ async function downloadAndCropImage(url, index) {
     const response = await axios({
       url,
       responseType: 'arraybuffer',
-      timeout: 5000
+      timeout: 15000
     });
 
     const imagePath = path.join(imagesDir, `image_${index}.jpg`);
@@ -140,8 +140,7 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
     return true;
   } catch (error) {
     console.error('Error sending photos to Telegram:', error);
-    return false;
-  }
+    return false; }
 }
 
 export async function postToTelegram(url) {
@@ -155,14 +154,14 @@ export async function postToTelegram(url) {
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
-        '--window-size=1366,768'
+        '--window-size=1920,1080'
       ]
     });
 
     const page = await browser.newPage();
     
     // Set navigation timeout
-    page.setDefaultNavigationTimeout(15000);
+    page.setDefaultNavigationTimeout(30000);
     
     // Enable request interception to block unnecessary resources
     await page.setRequestInterception(true);
@@ -176,13 +175,13 @@ export async function postToTelegram(url) {
 
     await page.goto(url, { 
       waitUntil: 'domcontentloaded',
-      timeout: 15000 
+      timeout: 30000 
     });
 
     // Wait for critical elements with timeout
     await Promise.race([
       page.waitForSelector('.auto-content_title'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for title')), 5000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for title')), 15000))
     ]);
 
     const carData = await page.evaluate(() => {
@@ -219,18 +218,18 @@ export async function postToTelegram(url) {
         break;
       } catch (error) {
         if (i === 2) throw error;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
 
     // Wait for photo container with timeout
     await Promise.race([
       page.waitForSelector('.megaphoto-container'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for photos')), 5000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for photos')), 15000))
     ]);
 
     // Short delay for images to load
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     const imageUrls = await page.evaluate(() => {
       const figures = document.querySelectorAll('.megaphoto-container figure img');

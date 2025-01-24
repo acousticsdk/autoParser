@@ -111,7 +111,7 @@ async function tryGetPhoneNumbers(browser, url) {
         // Устанавливаем таймаут для навигации
         await page.goto(url, { 
             waitUntil: 'domcontentloaded',
-            timeout: 6000 
+            timeout: 30000 
         });
 
         console.log('Simulating human behavior...');
@@ -120,7 +120,7 @@ async function tryGetPhoneNumbers(browser, url) {
         console.log('Waiting for phone button...');
         await page.waitForSelector('.phone_show_link', { 
             visible: true, 
-            timeout: 4000 
+            timeout: 15000 
         });
 
         const phoneButton = await page.$('.phone_show_link');
@@ -142,7 +142,7 @@ async function tryGetPhoneNumbers(browser, url) {
         }
 
         console.log('Waiting for phone numbers to appear...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
         
         const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
             elements.map(el => el.textContent.trim())
@@ -222,7 +222,7 @@ async function getPhoneNumber(url) {
             
             if (attempt < MAX_RETRIES) {
                 console.log(`Waiting 5 seconds before retry ${attempt + 2}...`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, 5000));
                 continue;
             }
         }
@@ -311,7 +311,7 @@ async function parsePage() {
                 ...commonHeaders,
                 ...browserProfile.headers
             },
-            timeout: 10000,
+            timeout: 30000,
             validateStatus: function (status) {
                 return status >= 200 && status < 300;
             },
