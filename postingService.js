@@ -22,6 +22,65 @@ if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir);
 }
 
+// Функции для эмуляции человеческого поведения
+function getRandomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function getRandomDelay(min, max) {
+  return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+async function simulateHumanBehavior(page) {
+  // Случайная задержка перед действиями
+  await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
+
+  // Случайные движения мыши
+  for (let i = 0; i < getRandomInt(2, 4); i++) {
+    await page.mouse.move(
+      getRandomInt(100, 700),
+      getRandomInt(100, 500),
+      { steps: getRandomInt(5, 10) }
+    );
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
+  }
+
+  // Случайный скролл
+  await page.evaluate(() => {
+    const scrollSteps = getRandomInt(3, 6);
+    const scrollInterval = setInterval(() => {
+      window.scrollBy(0, getRandomInt(100, 200));
+    }, getRandomInt(100, 300));
+
+    setTimeout(() => {
+      clearInterval(scrollInterval);
+    }, scrollSteps * 300);
+  });
+
+  // Ждем завершения скролла
+  await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
+}
+
+async function simulateGalleryBrowsing(page) {
+  // Имитация просмотра галереи
+  for (let i = 0; i < getRandomInt(3, 5); i++) {
+    // Случайные движения мыши над фотографиями
+    const photos = await page.$$('.megaphoto-container figure img');
+    if (photos.length > 0) {
+      const randomPhoto = photos[getRandomInt(0, photos.length - 1)];
+      const box = await randomPhoto.boundingBox();
+      if (box) {
+        await page.mouse.move(
+          box.x + box.width / 2 + getRandomInt(-20, 20),
+          box.y + box.height / 2 + getRandomInt(-20, 20),
+          { steps: getRandomInt(5, 10) }
+        );
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1500)));
+  }
+}
+
 function normalizeText(text) {
   return text ? text.replace(/\s+/g, ' ').trim() : text;
 }
@@ -184,10 +243,15 @@ async function tryPostToTelegram(url) {
 
     page.setDefaultNavigationTimeout(45000);
 
+    console.log('Navigating to page...');
     await page.goto(url, { 
       waitUntil: 'networkidle0',
       timeout: 45000 
     });
+
+    // Эмулируем человеческое поведение после загрузки страницы
+    console.log('Simulating human behavior...');
+    await simulateHumanBehavior(page);
 
     await Promise.race([
       page.waitForSelector('.auto-content_title'),
@@ -227,11 +291,22 @@ async function tryPostToTelegram(url) {
       throw new Error('Gallery button not found');
     }
 
-    await galleryButton.click();
+    // Прокручиваем к кнопке галереи
+    await page.evaluate(element => {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, galleryButton);
+
+    // Небольшая задержка перед кликом
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
+
+    // Кликаем на кнопку галереи
+    await galleryButton.click({ delay: getRandomDelay(50, 150) });
     
     await page.waitForSelector('.megaphoto-container', { timeout: 10000 });
     
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Эмулируем просмотр галереи
+    console.log('Browsing gallery...');
+    await simulateGalleryBrowsing(page);
 
     console.log('Getting image URLs from gallery...');
     const imageUrls = await page.evaluate(() => {
