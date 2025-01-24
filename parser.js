@@ -44,7 +44,7 @@ const MAX_SIZE = 60;
 const UPDATE_INTERVAL = 14 * 60 * 1000; // 14 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 50;
+const FRESH_LISTING_THRESHOLD = 59;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
@@ -188,10 +188,6 @@ async function getPhoneNumber(url) {
                     '--disable-dev-shm-usage',
                     '--disable-accelerated-2d-canvas',
                     '--disable-gpu',
-                    '--disable-extensions',
-                    '--memory-pressure-off',
-                    '--single-process',
-                    '--no-zygote',
                     '--window-size=1920,1080',
                     '--js-flags="--max-old-space-size=256"'
                 ]
@@ -485,8 +481,17 @@ async function runGarbageCollection() {
     global.gc();
 } 
 
+let isUpdating = false;
+let updateTimeout = null;
+
 async function updateData() {
+    if (isUpdating) {
+        console.log('Update already in progress, skipping...');
+        return;
+    }
+
     try {
+        isUpdating = true;
         console.log(`\n${moment().format('HH:mm')} - Starting update...`);
         
         await processPendingSMS();
@@ -501,19 +506,25 @@ async function updateData() {
         }
     } catch (error) {
         console.error('Error in update cycle:', error);
+    } finally {
+        isUpdating = false;
+        
+        // Очищаем предыдущий таймаут, если он есть
+        if (updateTimeout) {
+            clearTimeout(updateTimeout);
+        }
+        
+        // Устанавливаем новый таймаут
+        updateTimeout = setTimeout(updateData, UPDATE_INTERVAL);
     }
 }
 
 async function startParsing() {
     try {
         await storage.load();
-        await updateData();
         
-        setInterval(async () => {
-            const currentTime = moment().format('HH:mm:ss');
-            console.log(`\nStarting new update cycle... [${currentTime}]`);
-            await updateData();
-        }, UPDATE_INTERVAL);
+        // Запускаем первое обновление
+        await updateData();
     } catch (error) {
         console.error('Critical error:', error);
         process.exit(1);

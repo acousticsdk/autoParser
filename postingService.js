@@ -5,6 +5,7 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getRandomBrowserProfile } from './browsers.js';
 import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -146,22 +147,41 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
   }
 }
 
+async function createBrowserWithProfile() {
+  const browserProfile = getRandomBrowserProfile();
+  console.log(`Using browser profile: ${browserProfile.name} ${browserProfile.version}`);
+
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+      '--window-size=1920,1080',
+      '--js-flags="--max-old-space-size=256"'
+    ]
+  });
+
+  const page = await browser.newPage();
+  await page.setUserAgent(browserProfile.userAgent);
+  await page.setViewport(browserProfile.viewport);
+  await page.setExtraHTTPHeaders(browserProfile.headers);
+
+  return { browser, page, profile: browserProfile };
+}
+
 async function tryPostToTelegram(url) {
   let browser = null;
+  let page = null;
+  
   try {
-    browser = await puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--window-size=1920,1080'
-      ]
-    });
+    // Создаем новый браузер с новым профилем для каждой попытки
+    const { browser: newBrowser, page: newPage } = await createBrowserWithProfile();
+    browser = newBrowser;
+    page = newPage;
 
-    const page = await browser.newPage();
     page.setDefaultNavigationTimeout(45000);
 
     await page.goto(url, { 
