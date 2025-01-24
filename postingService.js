@@ -203,7 +203,7 @@ export async function postToTelegram(url) {
 
     // Открываем галерею
     console.log('Opening gallery...');
-    const galleryButton = await page.$('.photo-620x465 .action-disp.unlink');
+    const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
     if (!galleryButton) {
       throw new Error('Gallery button not found');
     }
@@ -211,30 +211,18 @@ export async function postToTelegram(url) {
     await galleryButton.click();
     
     // Ждем появления контейнера галереи
-    await page.waitForSelector('.gallery-view.show', { timeout: 10000 });
+    await page.waitForSelector('.megaphoto-container', { timeout: 10000 });
     
-    // Ждем загрузки всех изображений
-    await page.waitForFunction(() => {
-      const images = document.querySelectorAll('.gallery-view.show img');
-      return Array.from(images).every(img => img.complete && img.naturalHeight !== 0);
-    }, { timeout: 20000 });
-
-    // Даем дополнительное время для полной загрузки
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Даем время для загрузки изображений
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     // Получаем URL изображений из открытой галереи
     console.log('Getting image URLs from gallery...');
     const imageUrls = await page.evaluate(() => {
-      const images = Array.from(document.querySelectorAll('.gallery-view.show img'))
-        .map(img => {
-          const imageUrl = img.src;
-          if (!imageUrl) return null;
-          
-          return imageUrl.replace(/\/s\d+x\d+/, '/s2048x2048');
-        })
+      const figures = document.querySelectorAll('.megaphoto-container figure img');
+      return Array.from(figures)
+        .map(img => img.src)
         .filter(src => src && !src.includes('data:image'));
-
-      return [...new Set(images)];
     });
 
     console.log(`Found ${imageUrls.length} images in gallery`);
