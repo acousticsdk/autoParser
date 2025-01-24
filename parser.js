@@ -385,18 +385,26 @@ async function sendToTelegram(car) {
         return false;
     }
 
-    if (!await storage.isCarSent(car.url)) {
+    console.log('\n=== Starting sendToTelegram ===');
+    console.log(`URL: ${car.url}`);
+    
+    const isAlreadySent = await storage.isCarSent(car.url);
+    console.log(`Already sent check: ${isAlreadySent}`);
+    
+    if (!isAlreadySent) {
         console.log(`\nProcessing car: ${car.title}`);
         const addedTime = car.date.format('HH:mm');
         
         try {
-            console.log('Getting phone number...');
+            console.log('\n1. Getting phone numbers...');
             const phoneNumbers = await getPhoneNumber(car.url);
+            console.log(`Phone numbers received: ${JSON.stringify(phoneNumbers)}`);
             
-            console.log('Handling phone numbers...');
-            await handlePhoneNumbers(phoneNumbers, car);
+            console.log('\n2. Handling phone numbers...');
+            const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
+            console.log(`Phone handling result: ${phoneHandlingResult}`);
             
-            // Start posting to the second Telegram channel in parallel
+            console.log('\n3. Starting parallel posting to second channel...');
             const postingPromise = postToTelegram(car.url).catch(error => {
                 console.error('Error posting to second Telegram channel:', error);
                 return false;
@@ -409,24 +417,26 @@ async function sendToTelegram(car) {
                 phoneInfo = '\n' + phoneNumbers.map(phone => `📞 ${phone}`).join('\n');
             }
             
-            console.log('Sending to main Telegram channel...');
+            console.log('\n4. Sending to main Telegram channel...');
             const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
 
-            await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
+            console.log('Sending message to Telegram...');
+            const mainChannelResult = await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
+            console.log(`Main channel send result: ${JSON.stringify(mainChannelResult)}`);
             
-            // Wait for the posting to complete, but don't block if it fails
+            console.log('\n5. Waiting for second channel posting...');
             const postingResult = await postingPromise;
-            if (postingResult) {
-                console.log('✓ Successfully posted to second Telegram channel');
-            }
+            console.log(`Second channel posting result: ${postingResult}`);
             
-            await storage.markCarAsSent(car.url);
-            // Добавляем URL в множество обработанных
+            console.log('\n6. Marking car as sent...');
+            const markingResult = await storage.markCarAsSent(car.url);
+            console.log(`Marking result: ${markingResult}`);
+            
             processedUrls.add(car.url);
-            console.log(`✓ Sent to Telegram: ${car.title} (${addedTime})`);
+            console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
             return true;
         } catch (error) {
-            console.error('Error sending to Telegram:', error);
+            console.error('\n❌ Error in sendToTelegram:', error);
             return false;
         }
     }
