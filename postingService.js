@@ -23,6 +23,10 @@ if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir);
 }
 
+function normalizeText(text) {
+  return text ? text.replace(/\s+/g, ' ').trim() : text;
+}
+
 function getRandomPhotos(photos, count) {
   const result = [...photos];
   for (let i = result.length - 1; i > 0; i--) {
@@ -30,6 +34,24 @@ function getRandomPhotos(photos, count) {
     [result[i], result[j]] = [result[j], result[i]];
   }
   return result.slice(0, count);
+}
+
+function truncateDescription(description) {
+  if (!description || description.length <= 250) {
+    return description;
+  }
+
+  // Find the last period before 250 characters
+  const truncated = description.substring(0, 250);
+  const lastPeriodIndex = truncated.lastIndexOf('.');
+  
+  if (lastPeriodIndex === -1) {
+    // If no period found, return first 250 characters
+    return truncated;
+  }
+  
+  // Return text up to the last period
+  return description.substring(0, lastPeriodIndex + 1);
 }
 
 async function downloadAndCropImage(url, index) {
@@ -85,28 +107,30 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
         selectedPhotos.map((photo, index) => downloadAndCropImage(photo, index))
     );
 
-    // Create caption with exact format
-    let caption = `🚘 ${title}\n\n`;
+    // Create caption with exact format and normalize all text fields
+    let caption = `🚘 ${normalizeText(title)}\n\n`;
 
     // Add price if available
     if (price) {
-      caption += `💵 Ціна: ${price}\n`;
+      caption += `💵 Ціна: ${normalizeText(price)}\n`;
     }
 
     // Add technical specifications if available
-    if (engineInfo) caption += `🚲 Двигун: ${engineInfo}\n`;
-    if (transmission) caption += `🗳 КПП: ${transmission}\n`;
-    if (drivetrain) caption += `🔗 Привід: ${drivetrain}\n`;
-    if (mileage) caption += `🏃‍♂ Пробіг: ${mileage}\n`;
+    if (engineInfo) caption += `🚲 Двигун: ${normalizeText(engineInfo)}\n`;
+    if (transmission) caption += `🗳 КПП: ${normalizeText(transmission)}\n`;
+    if (drivetrain) caption += `🔗 Привід: ${normalizeText(drivetrain)}\n`;
+    if (mileage) caption += `🏃‍♂ Пробіг: ${normalizeText(mileage)}\n`;
 
     // Add empty line before description if any specs were added
     if (engineInfo || transmission || drivetrain || mileage) {
       caption += '\n';
     }
 
-    // Add description if available
+    // Add truncated description if available
     if (description) {
-      caption += `Короткий опис:\n${description}\n\n`;
+      const normalizedDesc = normalizeText(description);
+      const truncatedDesc = truncateDescription(normalizedDesc);
+      caption += `Короткий опис:\n${truncatedDesc}\n\n`;
     }
 
     // Add contact information
@@ -154,13 +178,13 @@ export async function postToTelegram(url) {
     await page.goto(url, { waitUntil: 'networkidle0' });
 
     // Get the car title
-    const title = await page.$eval('.auto-content_title', el => el.textContent.trim());
+    const title = await page.$eval('.auto-content_title', el => normalizeText(el.textContent));
     console.log('Car title:', title);
 
     // Get the price
     const price = await page.evaluate(() => {
       const priceElement = document.querySelector('section.price div.price_value strong');
-      return priceElement ? priceElement.textContent.trim() : '';
+      return priceElement ? normalizeText(priceElement.textContent) : '';
     });
     console.log('Price:', price);
 
@@ -169,7 +193,7 @@ export async function postToTelegram(url) {
       const engineLabel = Array.from(document.querySelectorAll('dd span.label')).find(el => el.textContent.trim() === 'Двигун');
       if (engineLabel) {
         const engineSpan = engineLabel.parentElement.querySelector('span.argument');
-        return engineSpan ? engineSpan.textContent.trim() : '';
+        return engineSpan ? normalizeText(engineSpan.textContent) : '';
       }
       return '';
     });
@@ -180,7 +204,7 @@ export async function postToTelegram(url) {
       const transmissionLabel = Array.from(document.querySelectorAll('.technical-info dd span.label')).find(el => el.textContent.trim() === 'Коробка передач');
       if (transmissionLabel) {
         const transmissionSpan = transmissionLabel.parentElement.querySelector('span.argument');
-        return transmissionSpan ? transmissionSpan.textContent.trim() : '';
+        return transmissionSpan ? normalizeText(transmissionSpan.textContent) : '';
       }
       return '';
     });
@@ -191,7 +215,7 @@ export async function postToTelegram(url) {
       const drivetrainLabel = Array.from(document.querySelectorAll('.technical-info dd span.label')).find(el => el.textContent.trim() === 'Привід');
       if (drivetrainLabel) {
         const drivetrainSpan = drivetrainLabel.parentElement.querySelector('span.argument');
-        return drivetrainSpan ? drivetrainSpan.textContent.trim() : '';
+        return drivetrainSpan ? normalizeText(drivetrainSpan.textContent) : '';
       }
       return '';
     });
@@ -202,7 +226,7 @@ export async function postToTelegram(url) {
       const mileageLabel = Array.from(document.querySelectorAll('dd span.label')).find(el => el.textContent.trim() === 'Пробіг');
       if (mileageLabel) {
         const mileageSpan = mileageLabel.parentElement.querySelector('span.argument');
-        return mileageSpan ? mileageSpan.textContent.trim() : '';
+        return mileageSpan ? normalizeText(mileageSpan.textContent) : '';
       }
       return '';
     });
@@ -211,7 +235,7 @@ export async function postToTelegram(url) {
     // Get description
     const description = await page.evaluate(() => {
       const descElement = document.querySelector('.additional-data.show-line .full-description');
-      return descElement ? descElement.textContent.trim() : '';
+      return descElement ? normalizeText(descElement.textContent) : '';
     });
     console.log('Description:', description);
 
