@@ -25,15 +25,12 @@ export class Storage {
             await this.client.connect();
             this.db = this.client.db('auto_ria_parser');
             
-            // Create indexes for sent_cars collection
             await this.db.collection(COLLECTION_NAME).createIndex({ timestamp: 1 });
             await this.db.collection(COLLECTION_NAME).createIndex({ url: 1 }, { unique: true });
             
-            // Create indexes for pending_sms collection
             await this.db.collection(PENDING_SMS_COLLECTION).createIndex({ scheduledFor: 1 });
             await this.db.collection(PENDING_SMS_COLLECTION).createIndex({ phoneNumber: 1 });
             
-            // Create indexes for phone_numbers collection
             await this.db.collection(PHONE_NUMBERS_COLLECTION).createIndex({ phoneNumber: 1 });
             await this.db.collection(PHONE_NUMBERS_COLLECTION).createIndex({ parsedAt: 1 });
             
@@ -44,7 +41,6 @@ export class Storage {
             
             if (this.retryCount < this.maxRetries) {
                 this.retryCount++;
-                console.log(`Retrying connection (attempt ${this.retryCount}/${this.maxRetries})...`);
                 await new Promise(resolve => setTimeout(resolve, 5000));
                 return this.load();
             }
@@ -81,14 +77,18 @@ export class Storage {
                 }
             }
 
-            await this.db.collection(COLLECTION_NAME).insertOne({
+            const result = await this.db.collection(COLLECTION_NAME).insertOne({
                 url: carUrl,
                 timestamp: new Date()
             });
+
+            return result.acknowledged;
         } catch (error) {
-            if (error.code !== 11000) {
-                console.error('Error marking car as sent:', error);
+            if (error.code === 11000) {
+                return true;
             }
+            console.error('Error marking car as sent:', error);
+            return false;
         }
     }
 
@@ -96,17 +96,17 @@ export class Storage {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
             if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
-                console.log(`Skipping invalid phone number for car: ${carInfo.title}`);
                 return false;
             }
 
-            await this.db.collection(PHONE_NUMBERS_COLLECTION).insertOne({
+            const result = await this.db.collection(PHONE_NUMBERS_COLLECTION).insertOne({
                 phoneNumber: trimmedPhone,
                 carTitle: carInfo.title,
                 carUrl: carInfo.url,
                 parsedAt: new Date()
             });
-            return true;
+
+            return result.acknowledged;
         } catch (error) {
             console.error('Error saving phone number:', error);
             return false;
@@ -149,28 +149,26 @@ export class Storage {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
             if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
-                console.log(`Skipping pending SMS for invalid phone number (car: ${carInfo.title})`);
                 return false;
             }
 
-            // Проверяем, нет ли уже запланированного SMS для этого номера
             const existingPendingSMS = await this.db.collection(PENDING_SMS_COLLECTION)
                 .findOne({ phoneNumber: trimmedPhone });
 
             if (existingPendingSMS) {
-                console.log(`SMS already scheduled for ${trimmedPhone}`);
                 return false;
             }
 
-            await this.db.collection(PENDING_SMS_COLLECTION).insertOne({
+            const result = await this.db.collection(PENDING_SMS_COLLECTION).insertOne({
                 phoneNumber: trimmedPhone,
                 carTitle: carInfo.title,
                 carUrl: carInfo.url,
-                message: "Дякуємо за публікацію автомобіля",
+                message: "Продайте авто швидко та вигідно! Майданчик у Кам'янці-Подільському, просп. Грушевського, 1А. Все просто: професійна оцінка, реклама, швидкий продаж! Телефонуйте: 0988210707. Менеджер зв'яжеться з вами найближчим часом!",
                 scheduledFor: scheduledFor,
                 createdAt: new Date()
             });
-            return true;
+
+            return result.acknowledged;
         } catch (error) {
             console.error('Error adding pending SMS:', error);
             return false;
@@ -193,12 +191,14 @@ export class Storage {
 
     async removePendingSMS(ids) {
         try {
-            await this.db.collection(PENDING_SMS_COLLECTION)
+            const result = await this.db.collection(PENDING_SMS_COLLECTION)
                 .deleteMany({
                     _id: { $in: ids }
                 });
+            return result.acknowledged;
         } catch (error) {
             console.error('Error removing pending SMS:', error);
+            return false;
         }
     }
 }

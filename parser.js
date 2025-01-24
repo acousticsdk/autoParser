@@ -41,10 +41,10 @@ const MIN_SIZE = 11;
 const MAX_SIZE = 60;
 
 // Update interval (in milliseconds)
-const UPDATE_INTERVAL = 8 * 60 * 1000; // 8 minutes between full update
+const UPDATE_INTERVAL = 14 * 60 * 1000; // 14 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 59;
+const FRESH_LISTING_THRESHOLD = 50;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
@@ -111,7 +111,7 @@ async function tryGetPhoneNumbers(browser, url) {
         // Устанавливаем таймаут для навигации
         await page.goto(url, { 
             waitUntil: 'domcontentloaded',
-            timeout: 30000 
+            timeout: 6000 
         });
 
         console.log('Simulating human behavior...');
@@ -120,7 +120,7 @@ async function tryGetPhoneNumbers(browser, url) {
         console.log('Waiting for phone button...');
         await page.waitForSelector('.phone_show_link', { 
             visible: true, 
-            timeout: 15000 
+            timeout: 4000 
         });
 
         const phoneButton = await page.$('.phone_show_link');
@@ -142,7 +142,7 @@ async function tryGetPhoneNumbers(browser, url) {
         }
 
         console.log('Waiting for phone numbers to appear...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         const phoneNumbers = await page.$$eval('span.phone.bold', elements => 
             elements.map(el => el.textContent.trim())
@@ -222,7 +222,7 @@ async function getPhoneNumber(url) {
             
             if (attempt < MAX_RETRIES) {
                 console.log(`Waiting 5 seconds before retry ${attempt + 2}...`);
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                await new Promise(resolve => setTimeout(resolve, 2000));
                 continue;
             }
         }
@@ -311,7 +311,7 @@ async function parsePage() {
                 ...commonHeaders,
                 ...browserProfile.headers
             },
-            timeout: 30000,
+            timeout: 10000,
             validateStatus: function (status) {
                 return status >= 200 && status < 300;
             },

@@ -49,7 +49,7 @@ function truncateDescription(description) {
   
   if (lastPeriodIndex === -1) {
     // If no period found, return first 250 characters
-    return truncated + '...';
+    return truncated + '..';
   }
   
   // Return text up to the last period with ellipsis and handle <br> tags
