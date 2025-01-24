@@ -5,13 +5,14 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Replace these with your actual Telegram bot token and channel ID
-const token = '7231242979:AAEvkENHXxUbRO7Xoczg0kqZTBi9fDffUX4';
-const channelId = '-1002378383260'; // Format: '@channelname' or '-100xxxxxxxxxx'
+// Get token and channel ID from environment variables
+const token = process.env.POSTING_BOT_TOKEN;
+const channelId = process.env.POSTING_CHANNEL_ID;
 const bot = new TelegramBot(token, { polling: false });
 
 // Disable deprecation warning
