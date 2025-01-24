@@ -14,6 +14,9 @@ import 'dotenv/config';
 process.env.TZ = 'Europe/Kiev';
 moment.locale('uk');
 
+// Cache for processed URLs to prevent duplicates within the same cycle
+const processedUrls = new Set();
+
 // Common headers for requests
 const commonHeaders = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -34,14 +37,14 @@ const commonHeaders = {
 const BASE_URL = 'https://auto.ria.com/uk/search/?indexName=auto,order_auto,newauto_search&region.id[0]=4&city.id[0]=498&distance_from_city_km[0]=20&price.currency=1&sort[0].order=dates.created.desc&abroad.not=0&custom.not=1&brand.id[0].not=88&brand.id[1].not=18&brand.id[2].not=89&categories.main.id=1&price.USD.gte=5000&page=0';
 
 // Size range for random page size
-const MIN_SIZE = 10;
-const MAX_SIZE = 40;
+const MIN_SIZE = 11;
+const MAX_SIZE = 60;
 
 // Update interval (in milliseconds)
-const UPDATE_INTERVAL = 8 * 60 * 1000; // 8 minutes between full update
+const UPDATE_INTERVAL = 14 * 60 * 1000; // 14 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 30;
+const FRESH_LISTING_THRESHOLD = 50;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
@@ -60,9 +63,6 @@ const ITEMS_PER_PAGE = 50;
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 const storage = new Storage();
 const smsService = new SMSService();
-
-// Set for tracking processed URLs in current cycle
-const processedUrls = new Set();
 
 // Helper function to get random integer between min and max (inclusive)
 function getRandomInt(min, max) {
@@ -237,7 +237,7 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     const saveResult = await storage.savePhoneNumber(phoneNumber, car);
     if (!saveResult) {
         console.log(`Skipping SMS handling for invalid phone number: ${phoneNumber}`);
-        return;
+        return false;
     }
 
     const currentHour = moment().hour();
@@ -253,14 +253,14 @@ async function handlePhoneNumbers(phoneNumbers, car) {
         const result = await storage.addPendingSMS(phoneNumber, car, nextSendTime.toDate());
         if (result) {
             console.log(`✓ SMS scheduled for ${nextSendTime.format('DD.MM.YYYY HH:mm')} for ${phoneNumber} (car: ${car.title})`);
+            return true;
         } else {
             console.log(`✗ Failed to schedule SMS for ${phoneNumber} (car: ${car.title})`);
+            return false;
         }
     } else {
-        const result = await smsService.sendSMS([phoneNumber], "Дякуємо за публікацію автомобіля");
-        if (result) {
-            console.log(`✓ SMS sent immediately to ${phoneNumber} for car: ${car.title}`);
-        }
+        const result = await smsService.sendSMS([phoneNumber], "Продайте авто швидко та вигідно! Майданчик у Кам'янці-Подільському, просп. Грушевського, 1А. Все просто: професійна оцінка, реклама, швидкий продаж! Телефонуйте: 0988210707. Менеджер зв'яжеться з вами найближчим часом!");
+        return result;
     }
 }
 
@@ -373,6 +373,68 @@ async function parsePage() {
     }
 }
 
+async function processCarSequentially(car) {
+    if (processedUrls.has(car.url)) {
+        console.log(`Skipping duplicate URL in current cycle: ${car.url}`);
+        return false;
+    }
+
+    console.log('\n=== Starting car processing ===');
+    console.log(`URL: ${car.url}`);
+    
+    const isAlreadySent = await storage.isCarSent(car.url);
+    console.log(`Already sent check: ${isAlreadySent}`);
+    
+    if (!isAlreadySent) {
+        console.log(`\nProcessing car: ${car.title}`);
+        const addedTime = car.date.format('HH:mm');
+        
+        try {
+            // 1. Get phone numbers
+            console.log('\n1. Getting phone numbers...');
+            const phoneNumbers = await getPhoneNumber(car.url);
+            console.log(`Phone numbers received: ${JSON.stringify(phoneNumbers)}`);
+            
+            // 2. Handle phone numbers and send SMS
+            console.log('\n2. Handling phone numbers...');
+            const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
+            console.log(`Phone handling result: ${phoneHandlingResult}`);
+            
+            // 3. Send to main channel
+            console.log('\n3. Sending to main Telegram channel...');
+            let phoneInfo = '';
+            if (phoneNumbers.length === 1) {
+                phoneInfo = `\n📞 ${phoneNumbers[0]}`;
+            } else if (phoneNumbers.length > 1) {
+                phoneInfo = '\n' + phoneNumbers.map(phone => `📞 ${phone}`).join('\n');
+            }
+            
+            const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
+            const mainChannelResult = await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
+            console.log(`Main channel send result: ${JSON.stringify(mainChannelResult)}`);
+            
+            // 4. Send to second channel
+            console.log('\n4. Sending to second Telegram channel...');
+            const secondChannelResult = await postToTelegram(car.url);
+            console.log(`Second channel posting result: ${secondChannelResult}`);
+            
+            // 5. Mark as processed
+            if (mainChannelResult && secondChannelResult) {
+                console.log('\n5. Marking car as sent...');
+                const markingResult = await storage.markCarAsSent(car.url);
+                console.log(`Marking result: ${markingResult}`);
+                
+                processedUrls.add(car.url);
+                console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
+                return true;
+            }
+        } catch (error) {
+            console.error('\n❌ Error in car processing:', error);
+        }
+    }
+    return false;
+}
+
 async function processNewCars(cars) {
     const freshThreshold = moment().subtract(FRESH_LISTING_THRESHOLD, 'minutes');
     
@@ -392,79 +454,25 @@ async function processNewCars(cars) {
     
     let processedCount = 0;
     
+    // Последовательная обработка каждого автомобиля
     for (const car of carsToProcess) {
-        console.log(`\n=== Processing car ${processedCount + 1}/${carsToProcess.length} ===`);
-        console.log(`Title: ${car.title}`);
-        
-        try {
-            // Проверяем, не был ли этот URL уже обработан
-            if (processedUrls.has(car.url)) {
-                console.log(`Skipping duplicate URL in current cycle: ${car.url}`);
-                continue;
+        const success = await processCarSequentially(car);
+        if (success) {
+            processedCount++;
+            console.log(`Progress: ${processedCount}/${carsToProcess.length} cars processed`);
+            
+            // Добавляем небольшую задержку между обработкой автомобилей
+            if (processedCount < carsToProcess.length) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
             }
-            
-            const isAlreadySent = await storage.isCarSent(car.url);
-            if (isAlreadySent) {
-                console.log('Car was already sent before, skipping...');
-                continue;
-            }
-
-            // 1. Получаем номер телефона
-            console.log('\n1. Getting phone numbers...');
-            const phoneNumbers = await getPhoneNumber(car.url);
-            console.log(`Phone numbers received: ${JSON.stringify(phoneNumbers)}`);
-            
-            // 2. Обрабатываем номер телефона (SMS и сохранение)
-            console.log('\n2. Handling phone numbers...');
-            await handlePhoneNumbers(phoneNumbers, car);
-            
-            // 3. Отправляем в первый канал
-            console.log('\n3. Sending to first Telegram channel...');
-            const addedTime = car.date.format('HH:mm');
-            let phoneInfo = '';
-            if (phoneNumbers.length === 1) {
-                phoneInfo = `\n📞 ${phoneNumbers[0]}`;
-            } else if (phoneNumbers.length > 1) {
-                phoneInfo = '\n' + phoneNumbers.map(phone => `📞 ${phone}`).join('\n');
-            }
-            
-            const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
-            await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
-            console.log('✓ Sent to first channel');
-            
-            // 4. Отправляем во второй канал
-            console.log('\n4. Sending to second Telegram channel...');
-            const secondChannelResult = await postToTelegram(car.url);
-            
-            if (secondChannelResult) {
-                console.log('✓ Successfully sent to second channel');
-                
-                // 5. Помечаем как отправленное и добавляем в обработанные
-                await storage.markCarAsSent(car.url);
-                processedUrls.add(car.url);
-                
-                processedCount++;
-                console.log(`\n✓ Successfully processed car ${processedCount}/${carsToProcess.length}`);
-                
-                // Добавляем небольшую задержку между обработкой автомобилей
-                if (processedCount < carsToProcess.length) {
-                    console.log('Waiting 3 seconds before processing next car...');
-                    await new Promise(resolve => setTimeout(resolve, 3000));
-                }
-            } else {
-                console.log('✗ Failed to send to second channel');
-            }
-        } catch (error) {
-            console.error(`Error processing car: ${error.message}`);
-            continue;
         }
+        global.gc && global.gc();
     }
 
-    console.log(`\n=== Finished processing cars ===`);
-    console.log(`Successfully processed: ${processedCount}/${carsToProcess.length}`);
+    console.log(`\nFinished processing cars. Successfully processed: ${processedCount}/${carsToProcess.length}`);
 
     if (newCars.length > MAX_MESSAGES_PER_CYCLE) {
-        console.log(`Note: ${newCars.length - MAX_MESSAGES_PER_CYCLE} cars will be processed in the next cycle.`);
+        console.log(`Limiting messages to ${MAX_MESSAGES_PER_CYCLE}. ${newCars.length - MAX_MESSAGES_PER_CYCLE} cars will be processed in the next cycle.`);
     }
 }
 
