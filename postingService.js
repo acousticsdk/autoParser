@@ -165,7 +165,7 @@ export async function postToTelegram(url) {
     page.setDefaultNavigationTimeout(45000);
 
     await page.goto(url, { 
-      waitUntil: 'networkidle0', // Изменено обратно на networkidle0
+      waitUntil: 'networkidle0',
       timeout: 45000 
     });
 
@@ -176,7 +176,7 @@ export async function postToTelegram(url) {
 
     // Открываем галерею
     console.log('Opening gallery...');
-    const galleryButton = await page.$('.preview-gallery.mhide');
+    const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
     if (!galleryButton) {
       throw new Error('Gallery button not found');
     }
@@ -184,10 +184,10 @@ export async function postToTelegram(url) {
     await galleryButton.click();
     
     // Ждем полной загрузки галереи
-    await page.waitForSelector('.gallery-view.show', { timeout: 10000 });
+    await page.waitForSelector('.megaphoto-container', { timeout: 10000 });
     
     // Добавляем задержку для полной загрузки изображений
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     const carData = await page.evaluate(() => {
       const getData = (selector) => {
@@ -219,9 +219,9 @@ export async function postToTelegram(url) {
     // Получаем URL изображений из открытой галереи
     console.log('Getting image URLs from gallery...');
     const imageUrls = await page.evaluate(() => {
-      const images = Array.from(document.querySelectorAll('.gallery-view.show .image-gallery-image img'))
+      const images = Array.from(document.querySelectorAll('.megaphoto-container figure img'))
         .map(img => {
-          const imageUrl = img.getAttribute('src');
+          const imageUrl = img.src;
           if (!imageUrl) return null;
           
           return imageUrl.replace(/\/s\d+x\d+/, '/s2048x2048');
