@@ -34,7 +34,7 @@ function getRandomPhotos(photos, count) {
     const j = Math.floor(Math.random() * (i + 1));
     [result[i], result[j]] = [result[j], result[i]];
   }
-  return result.slice(0, count);
+  return result.slice(0, Math.min(count, result.length));
 }
 
 function truncateDescription(description) {
@@ -92,17 +92,18 @@ async function downloadAndCropImage(url, index) {
 
 async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, transmission, drivetrain, description) {
   try {
-    // Always take first 3 photos
-    const firstThree = photos.slice(0, 3);
-
-    // Get remaining photos
-    const remainingPhotos = photos.slice(3);
-
-    // Randomly select 7 photos from the remaining ones
-    const randomSeven = getRandomPhotos(remainingPhotos, 7);
-
-    // Combine first 3 and random 7
-    const selectedPhotos = [...firstThree, ...randomSeven];
+    let selectedPhotos = [];
+    
+    if (photos.length <= 10) {
+      // Если фотографий 10 или меньше, берем все
+      selectedPhotos = photos;
+    } else {
+      // Если больше 10, берем первые 3 и случайные из оставшихся
+      const firstThree = photos.slice(0, 3);
+      const remainingPhotos = photos.slice(3);
+      const randomSeven = getRandomPhotos(remainingPhotos, 7);
+      selectedPhotos = [...firstThree, ...randomSeven];
+    }
 
     // Download, crop and prepare all selected photos
     const processedPhotos = await Promise.all(
@@ -148,7 +149,7 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
       parse_mode: index === 0 ? 'Markdown' : undefined // Enable Markdown formatting for the caption
     }));
 
-    // Send all 10 photos as one group
+    // Send photos as one group
     await bot.sendMediaGroup(channelId, media);
 
     // Clean up - delete all processed images
@@ -161,7 +162,7 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
       });
     }
 
-    console.log('Successfully sent 10 cropped photos to Telegram');
+    console.log(`Successfully sent ${processedPhotos.length} cropped photos to Telegram`);
     return true;
   } catch (error) {
     console.error('Error sending photos to Telegram:', error);
@@ -258,13 +259,8 @@ export async function postToTelegram(url) {
 
     console.log(`Found ${imageUrls.length} images`);
 
-    if (imageUrls.length >= 10) {
-      // Send photos to Telegram with all car details
-      return await sendPhotosToTelegram(imageUrls, title, price, engineInfo, mileage, transmission, drivetrain, description);
-    } else {
-      console.log('Not enough photos found (less than 10)');
-      return false;
-    }
+    // Send photos to Telegram with all car details
+    return await sendPhotosToTelegram(imageUrls, title, price, engineInfo, mileage, transmission, drivetrain, description);
   } catch (error) {
     console.error('Error occurred:', error);
     return false;
