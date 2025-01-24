@@ -39,7 +39,8 @@ function getRandomPhotos(photos, count) {
 
 function truncateDescription(description) {
   if (!description || description.length <= 250) {
-    return description;
+    // Replace <br> with newline character
+    return description ? description.replace(/<br>/gi, '\n') : description;
   }
 
   // Find the last period before 250 characters
@@ -48,11 +49,11 @@ function truncateDescription(description) {
   
   if (lastPeriodIndex === -1) {
     // If no period found, return first 250 characters
-    return truncated;
+    return truncated + '...';
   }
   
-  // Return text up to the last period
-  return description.substring(0, lastPeriodIndex + 1);
+  // Return text up to the last period with ellipsis and handle <br> tags
+  return description.substring(0, lastPeriodIndex + 1).replace(/<br>/gi, '\n') + '...';
 }
 
 async function downloadAndCropImage(url, index) {
