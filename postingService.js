@@ -146,7 +146,7 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
   }
 }
 
-export async function postToTelegram(url) {
+async function tryPostToTelegram(url) {
   let browser = null;
   try {
     browser = await puppeteer.launch({
@@ -201,7 +201,6 @@ export async function postToTelegram(url) {
       };
     });
 
-    // Открываем галерею
     console.log('Opening gallery...');
     const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
     if (!galleryButton) {
@@ -210,13 +209,10 @@ export async function postToTelegram(url) {
 
     await galleryButton.click();
     
-    // Ждем появления контейнера галереи
     await page.waitForSelector('.megaphoto-container', { timeout: 10000 });
     
-    // Даем время для загрузки изображений
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Получаем URL изображений из открытой галереи
     console.log('Getting image URLs from gallery...');
     const imageUrls = await page.evaluate(() => {
       const figures = document.querySelectorAll('.megaphoto-container figure img');
@@ -243,7 +239,7 @@ export async function postToTelegram(url) {
     );
   } catch (error) {
     console.error('Error occurred:', error);
-    return false;
+    throw error;
   } finally {
     if (browser) {
       try {
@@ -253,4 +249,27 @@ export async function postToTelegram(url) {
       }
     }
   }
+}
+
+export async function postToTelegram(url) {
+  const MAX_RETRIES = 2;
+  
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`Starting attempt ${attempt + 1}/${MAX_RETRIES + 1} to post to Telegram...`);
+      const result = await tryPostToTelegram(url);
+      return result;
+    } catch (error) {
+      console.error(`Error in attempt ${attempt + 1}: ${error.message}`);
+      
+      if (attempt < MAX_RETRIES) {
+        console.log(`Waiting 5 seconds before retry ${attempt + 2}...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        continue;
+      }
+    }
+  }
+  
+  console.log('All attempts failed');
+  return false;
 }
