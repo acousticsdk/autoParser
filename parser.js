@@ -14,6 +14,9 @@ import 'dotenv/config';
 process.env.TZ = 'Europe/Kiev';
 moment.locale('uk');
 
+// Cache for processed URLs to prevent duplicates within the same cycle
+const processedUrls = new Set();
+
 // Common headers for requests
 const commonHeaders = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -41,7 +44,7 @@ const MAX_SIZE = 60;
 const UPDATE_INTERVAL = 8 * 60 * 1000; // 8 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 60;
+const FRESH_LISTING_THRESHOLD = 40;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
@@ -303,7 +306,6 @@ async function parsePage() {
         
         const browserProfile = getRandomBrowserProfile();
         
-        
         const axiosInstance = axios.create({
             headers: {
                 ...commonHeaders,
@@ -377,6 +379,12 @@ async function parsePage() {
 }
 
 async function sendToTelegram(car) {
+    // Проверяем, не был ли этот URL уже обработан в текущем цикле
+    if (processedUrls.has(car.url)) {
+        console.log(`Skipping duplicate URL in current cycle: ${car.url}`);
+        return false;
+    }
+
     if (!await storage.isCarSent(car.url)) {
         console.log(`\nProcessing car: ${car.title}`);
         const addedTime = car.date.format('HH:mm');
@@ -413,6 +421,8 @@ async function sendToTelegram(car) {
             }
             
             await storage.markCarAsSent(car.url);
+            // Добавляем URL в множество обработанных
+            processedUrls.add(car.url);
             console.log(`✓ Sent to Telegram: ${car.title} (${addedTime})`);
             return true;
         } catch (error) {
@@ -480,6 +490,9 @@ async function updateData() {
         } else {
             console.log('No cars found in this update');
         }
+
+        // Очищаем множество обработанных URL в конце цикла
+        processedUrls.clear();
     } catch (error) {
         console.error('Error in update cycle:', error);
     }
@@ -506,7 +519,7 @@ const server = http.createServer(async (req, res) => {
     if (req.url.startsWith('/database')) {
         try {
             const urlParams = new URL(req.url, `http://${req.headers.host}`);
-            const page = parseInt(urlParams.searchParams.get('page ')) || 1;
+            const page = parseInt(urlParams.searchParams.get('page')) || 1;
             const skip = (page - 1) * ITEMS_PER_PAGE;
             
             const { phoneNumbers, totalCount } = await storage.getPhoneNumbers(skip, ITEMS_PER_PAGE);
