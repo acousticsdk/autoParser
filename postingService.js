@@ -145,8 +145,7 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
       media: fs.createReadStream(photoPath),
       filename: path.basename(photoPath),
       contentType: 'image/jpeg',
-      caption: index === 0 ? caption : undefined, // Add caption only to the first photo
-      parse_mode: index === 0 ? 'Markdown' : undefined // Enable Markdown formatting for the caption
+      caption: index === 0 ? caption : undefined // Add caption only to the first photo
     }));
 
     // Send photos as one group
