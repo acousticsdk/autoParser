@@ -174,21 +174,6 @@ export async function postToTelegram(url) {
       new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for title')), 30000))
     ]);
 
-    // Открываем галерею
-    console.log('Opening gallery...');
-    const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
-    if (!galleryButton) {
-      throw new Error('Gallery button not found');
-    }
-
-    await galleryButton.click();
-    
-    // Ждем полной загрузки галереи
-    await page.waitForSelector('.megaphoto-container', { timeout: 10000 });
-    
-    // Добавляем задержку для полной загрузки изображений
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
     const carData = await page.evaluate(() => {
       const getData = (selector) => {
         const element = document.querySelector(selector);
@@ -216,10 +201,31 @@ export async function postToTelegram(url) {
       };
     });
 
+    // Открываем галерею
+    console.log('Opening gallery...');
+    const galleryButton = await page.$('.photo-620x465 .action-disp.unlink');
+    if (!galleryButton) {
+      throw new Error('Gallery button not found');
+    }
+
+    await galleryButton.click();
+    
+    // Ждем появления контейнера галереи
+    await page.waitForSelector('.gallery-view.show', { timeout: 10000 });
+    
+    // Ждем загрузки всех изображений
+    await page.waitForFunction(() => {
+      const images = document.querySelectorAll('.gallery-view.show img');
+      return Array.from(images).every(img => img.complete && img.naturalHeight !== 0);
+    }, { timeout: 20000 });
+
+    // Даем дополнительное время для полной загрузки
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
     // Получаем URL изображений из открытой галереи
     console.log('Getting image URLs from gallery...');
     const imageUrls = await page.evaluate(() => {
-      const images = Array.from(document.querySelectorAll('.megaphoto-container figure img'))
+      const images = Array.from(document.querySelectorAll('.gallery-view.show img'))
         .map(img => {
           const imageUrl = img.src;
           if (!imageUrl) return null;
