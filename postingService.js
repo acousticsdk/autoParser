@@ -10,15 +10,12 @@ import 'dotenv/config';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Get token and channel ID from environment variables
 const token = process.env.POSTING_BOT_TOKEN;
 const channelId = process.env.POSTING_CHANNEL_ID;
 const bot = new TelegramBot(token, { polling: false });
 
-// Disable deprecation warning
 bot.setWebHook('');
 
-// Create images directory if it doesn't exist
 const imagesDir = path.join(__dirname, 'images');
 if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir);
@@ -39,20 +36,16 @@ function getRandomPhotos(photos, count) {
 
 function truncateDescription(description) {
   if (!description || description.length <= 250) {
-    // Replace <br> with newline character
     return description ? description.replace(/<br>/gi, '\n') : description;
   }
 
-  // Find the last period before 250 characters
   const truncated = description.substring(0, 250);
   const lastPeriodIndex = truncated.lastIndexOf('.');
   
   if (lastPeriodIndex === -1) {
-    // If no period found, return first 250 characters
     return truncated + '..';
   }
   
-  // Return text up to the last period with ellipsis and handle <br> tags
   return description.substring(0, lastPeriodIndex + 1).replace(/<br>/gi, '\n') + '...';
 }
 
@@ -60,16 +53,15 @@ async function downloadAndCropImage(url, index) {
   try {
     const response = await axios({
       url,
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      timeout: 5000
     });
 
     const imagePath = path.join(imagesDir, `image_${index}.jpg`);
     const croppedPath = path.join(imagesDir, `cropped_${index}.jpg`);
 
-    // Save original image
     await fs.promises.writeFile(imagePath, response.data);
 
-    // Crop image (remove top 100px)
     await sharp(imagePath)
         .metadata()
         .then(metadata => {
@@ -95,73 +87,56 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
     let selectedPhotos = [];
     
     if (photos.length <= 10) {
-      // Если фотографий 10 или меньше, берем все
       selectedPhotos = photos;
     } else {
-      // Если больше 10, берем первые 3 и случайные из оставшихся
       const firstThree = photos.slice(0, 3);
       const remainingPhotos = photos.slice(3);
       const randomSeven = getRandomPhotos(remainingPhotos, 7);
       selectedPhotos = [...firstThree, ...randomSeven];
     }
 
-    // Download, crop and prepare all selected photos
     const processedPhotos = await Promise.all(
         selectedPhotos.map((photo, index) => downloadAndCropImage(photo, index))
     );
 
-    // Create caption with exact format and normalize all text fields
     let caption = `🚘 ${normalizeText(title)}\n\n`;
 
-    // Add price if available
     if (price) {
       caption += `💵 Ціна: ${normalizeText(price)}\n`;
     }
 
-    // Add technical specifications if available
     if (engineInfo) caption += `🚲 Двигун: ${normalizeText(engineInfo)}\n`;
     if (transmission) caption += `🗳 КПП: ${normalizeText(transmission)}\n`;
     if (drivetrain) caption += `🔗 Привід: ${normalizeText(drivetrain)}\n`;
     if (mileage) caption += `🏃‍♂ Пробіг: ${normalizeText(mileage)}\n`;
 
-    // Add empty line before description if any specs were added
     if (engineInfo || transmission || drivetrain || mileage) {
       caption += '\n';
     }
 
-    // Add truncated description if available
     if (description) {
       const normalizedDesc = normalizeText(description);
       const truncatedDesc = truncateDescription(normalizedDesc);
       caption += `Короткий опис:\n${truncatedDesc}\n\n`;
     }
 
-    // Add contact information
     caption += `📞 Телефон: +380988210707`;
 
-    // Create media group for Telegram using processed photos
     const media = processedPhotos.map((photoPath, index) => ({
       type: 'photo',
       media: fs.createReadStream(photoPath),
       filename: path.basename(photoPath),
       contentType: 'image/jpeg',
-      caption: index === 0 ? caption : undefined // Add caption only to the first photo
+      caption: index === 0 ? caption : undefined
     }));
 
-    // Send photos as one group
     await bot.sendMediaGroup(channelId, media);
 
-    // Clean up - delete all processed images
     for (const photoPath of processedPhotos) {
-      fs.unlink(photoPath, err => {
-        if (err) console.error('Error deleting file:', err);
-      });
-      fs.unlink(photoPath.replace('cropped_', 'image_'), err => {
-        if (err) console.error('Error deleting original file:', err);
-      });
+      fs.unlink(photoPath, () => {});
+      fs.unlink(photoPath.replace('cropped_', 'image_'), () => {});
     }
 
-    console.log(`Successfully sent ${processedPhotos.length} cropped photos to Telegram`);
     return true;
   } catch (error) {
     console.error('Error sending photos to Telegram:', error);
@@ -170,100 +145,122 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
 }
 
 export async function postToTelegram(url) {
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox']
-  });
-
+  let browser = null;
   try {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920,1080'
+      ]
+    });
+
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'networkidle0' });
-
-    // Get the car title
-    const title = await page.$eval('.auto-content_title', el => el.textContent.replace(/\s+/g, ' ').trim());
-    console.log('Car title:', title);
-
-    // Get the price
-    const price = await page.evaluate(() => {
-      const priceElement = document.querySelector('section.price div.price_value strong');
-      return priceElement ? priceElement.textContent.replace(/\s+/g, ' ').trim() : '';
-    });
-    console.log('Price:', price);
-
-    // Get engine information
-    const engineInfo = await page.evaluate(() => {
-      const engineLabel = Array.from(document.querySelectorAll('dd span.label')).find(el => el.textContent.trim() === 'Двигун');
-      if (engineLabel) {
-        const engineSpan = engineLabel.parentElement.querySelector('span.argument');
-        return engineSpan ? engineSpan.textContent.replace(/\s+/g, ' ').trim() : '';
+    
+    // Set navigation timeout
+    page.setDefaultNavigationTimeout(15000);
+    
+    // Enable request interception to block unnecessary resources
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      if (['image', 'stylesheet', 'font', 'script'].includes(request.resourceType())) {
+        request.abort();
+      } else {
+        request.continue();
       }
-      return '';
     });
-    console.log('Engine info:', engineInfo);
 
-    // Get transmission information
-    const transmission = await page.evaluate(() => {
-      const transmissionLabel = Array.from(document.querySelectorAll('.technical-info dd span.label')).find(el => el.textContent.trim() === 'Коробка передач');
-      if (transmissionLabel) {
-        const transmissionSpan = transmissionLabel.parentElement.querySelector('span.argument');
-        return transmissionSpan ? transmissionSpan.textContent.replace(/\s+/g, ' ').trim() : '';
+    await page.goto(url, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 15000 
+    });
+
+    // Wait for critical elements with timeout
+    await Promise.race([
+      page.waitForSelector('.auto-content_title'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for title')), 5000))
+    ]);
+
+    const carData = await page.evaluate(() => {
+      const getData = (selector) => {
+        const element = document.querySelector(selector);
+        return element ? element.textContent.replace(/\s+/g, ' ').trim() : '';
+      };
+
+      const getSpecValue = (label) => {
+        const labelElement = Array.from(document.querySelectorAll('dd span.label'))
+          .find(el => el.textContent.trim() === label);
+        if (labelElement) {
+          const valueSpan = labelElement.parentElement.querySelector('span.argument');
+          return valueSpan ? valueSpan.textContent.replace(/\s+/g, ' ').trim() : '';
+        }
+        return '';
+      };
+
+      return {
+        title: getData('.auto-content_title'),
+        price: getData('section.price div.price_value strong'),
+        engineInfo: getSpecValue('Двигун'),
+        transmission: getSpecValue('Коробка передач'),
+        drivetrain: getSpecValue('Привід'),
+        mileage: getSpecValue('Пробіг'),
+        description: getData('.additional-data.show-line .full-description')
+      };
+    });
+
+    // Click gallery button with retry
+    for (let i = 0; i < 3; i++) {
+      try {
+        await page.click('.count-photo.right.mp.fl-r.unlink');
+        break;
+      } catch (error) {
+        if (i === 2) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      return '';
-    });
-    console.log('Transmission:', transmission);
+    }
 
-    // Get drivetrain information
-    const drivetrain = await page.evaluate(() => {
-      const drivetrainLabel = Array.from(document.querySelectorAll('.technical-info dd span.label')).find(el => el.textContent.trim() === 'Привід');
-      if (drivetrainLabel) {
-        const drivetrainSpan = drivetrainLabel.parentElement.querySelector('span.argument');
-        return drivetrainSpan ? drivetrainSpan.textContent.replace(/\s+/g, ' ').trim() : '';
-      }
-      return '';
-    });
-    console.log('Drivetrain:', drivetrain);
+    // Wait for photo container with timeout
+    await Promise.race([
+      page.waitForSelector('.megaphoto-container'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for photos')), 5000))
+    ]);
 
-    // Get mileage information
-    const mileage = await page.evaluate(() => {
-      const mileageLabel = Array.from(document.querySelectorAll('dd span.label')).find(el => el.textContent.trim() === 'Пробіг');
-      if (mileageLabel) {
-        const mileageSpan = mileageLabel.parentElement.querySelector('span.argument');
-        return mileageSpan ? mileageSpan.textContent.replace(/\s+/g, ' ').trim() : '';
-      }
-      return '';
-    });
-    console.log('Mileage:', mileage);
+    // Short delay for images to load
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Get description
-    const description = await page.evaluate(() => {
-      const descElement = document.querySelector('.additional-data.show-line .full-description');
-      return descElement ? descElement.textContent.replace(/\s+/g, ' ').trim() : '';
-    });
-    console.log('Description:', description);
-
-    // Click on the photo gallery button
-    await page.click('.count-photo.right.mp.fl-r.unlink');
-
-    // Wait for the photo container to appear
-    await page.waitForSelector('.megaphoto-container');
-
-    // Wait additional 5 seconds for images to load
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    // Extract all image URLs
     const imageUrls = await page.evaluate(() => {
       const figures = document.querySelectorAll('.megaphoto-container figure img');
       return Array.from(figures).map(img => img.src);
     });
 
-    console.log(`Found ${imageUrls.length} images`);
+    if (!imageUrls.length) {
+      throw new Error('No images found');
+    }
 
-    // Send photos to Telegram with all car details
-    return await sendPhotosToTelegram(imageUrls, title, price, engineInfo, mileage, transmission, drivetrain, description);
+    return await sendPhotosToTelegram(
+      imageUrls,
+      carData.title,
+      carData.price,
+      carData.engineInfo,
+      carData.mileage,
+      carData.transmission,
+      carData.drivetrain,
+      carData.description
+    );
   } catch (error) {
     console.error('Error occurred:', error);
     return false;
   } finally {
-    await browser.close();
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (error) {
+        console.error('Error closing browser:', error);
+      }
+    }
   }
 }
