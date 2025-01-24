@@ -95,8 +95,6 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
       selectedPhotos = [...firstThree, ...randomSeven];
     }
 
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
     const processedPhotos = await Promise.all(
         selectedPhotos.map((photo, index) => downloadAndCropImage(photo, index))
     );
@@ -165,18 +163,9 @@ export async function postToTelegram(url) {
 
     const page = await browser.newPage();
     page.setDefaultNavigationTimeout(45000);
-    
-    await page.setRequestInterception(true);
-    page.on('request', (request) => {
-      if (['stylesheet', 'font'].includes(request.resourceType())) {
-        request.abort();
-      } else {
-        request.continue();
-      }
-    });
 
     await page.goto(url, { 
-      waitUntil: 'networkidle0',
+      waitUntil: 'networkidle0', // Изменено обратно на networkidle0
       timeout: 45000 
     });
 
@@ -184,6 +173,21 @@ export async function postToTelegram(url) {
       page.waitForSelector('.auto-content_title'),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for title')), 30000))
     ]);
+
+    // Открываем галерею
+    console.log('Opening gallery...');
+    const galleryButton = await page.$('.preview-gallery.mhide');
+    if (!galleryButton) {
+      throw new Error('Gallery button not found');
+    }
+
+    await galleryButton.click();
+    
+    // Ждем полной загрузки галереи
+    await page.waitForSelector('.gallery-view.show', { timeout: 10000 });
+    
+    // Добавляем задержку для полной загрузки изображений
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     const carData = await page.evaluate(() => {
       const getData = (selector) => {
@@ -212,36 +216,26 @@ export async function postToTelegram(url) {
       };
     });
 
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Click gallery button with retry
-    for (let i = 0; i < 3; i++) {
-      try {
-        await page.click('.count-photo.right.mp.fl-r.unlink');
-        break;
-      } catch (error) {
-        if (i === 2) throw error;
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    }
-
-    // Просто ждем появления контейнера с фотографиями
-    await Promise.race([
-      page.waitForSelector('.megaphoto-container'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for photos')), 30000))
-    ]);
-
-    // Получаем все src атрибуты изображений
+    // Получаем URL изображений из открытой галереи
+    console.log('Getting image URLs from gallery...');
     const imageUrls = await page.evaluate(() => {
-      const figures = document.querySelectorAll('.megaphoto-container figure img');
-      return Array.from(figures).map(img => img.src);
+      const images = Array.from(document.querySelectorAll('.gallery-view.show .image-gallery-image img'))
+        .map(img => {
+          const imageUrl = img.getAttribute('src');
+          if (!imageUrl) return null;
+          
+          return imageUrl.replace(/\/s\d+x\d+/, '/s2048x2048');
+        })
+        .filter(src => src && !src.includes('data:image'));
+
+      return [...new Set(images)];
     });
 
-    if (!imageUrls.length) {
-      throw new Error('No images found');
-    }
+    console.log(`Found ${imageUrls.length} images in gallery`);
 
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    if (!imageUrls.length) {
+      throw new Error('No images found in gallery');
+    }
 
     return await sendPhotosToTelegram(
       imageUrls,
