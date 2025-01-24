@@ -54,7 +54,7 @@ async function downloadAndCropImage(url, index) {
     const response = await axios({
       url,
       responseType: 'arraybuffer',
-      timeout: 15000
+      timeout: 30000 // Увеличили таймаут до 30 секунд
     });
 
     const imagePath = path.join(imagesDir, `image_${index}.jpg`);
@@ -95,6 +95,9 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
       selectedPhotos = [...firstThree, ...randomSeven];
     }
 
+    // Добавляем задержку перед обработкой фотографий
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
     const processedPhotos = await Promise.all(
         selectedPhotos.map((photo, index) => downloadAndCropImage(photo, index))
     );
@@ -132,6 +135,9 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
 
     await bot.sendMediaGroup(channelId, media);
 
+    // Добавляем задержку перед удалением файлов
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
     for (const photoPath of processedPhotos) {
       fs.unlink(photoPath, () => {});
       fs.unlink(photoPath.replace('cropped_', 'image_'), () => {});
@@ -140,7 +146,8 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
     return true;
   } catch (error) {
     console.error('Error sending photos to Telegram:', error);
-    return false; }
+    return false;
+  }
 }
 
 export async function postToTelegram(url) {
@@ -160,13 +167,13 @@ export async function postToTelegram(url) {
 
     const page = await browser.newPage();
     
-    // Set navigation timeout
-    page.setDefaultNavigationTimeout(30000);
+    // Увеличиваем таймаут навигации
+    page.setDefaultNavigationTimeout(45000);
     
     // Enable request interception to block unnecessary resources
     await page.setRequestInterception(true);
     page.on('request', (request) => {
-      if (['image', 'stylesheet', 'font', 'script'].includes(request.resourceType())) {
+      if (['stylesheet', 'font'].includes(request.resourceType())) {
         request.abort();
       } else {
         request.continue();
@@ -174,14 +181,14 @@ export async function postToTelegram(url) {
     });
 
     await page.goto(url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 30000 
+      waitUntil: 'networkidle0',
+      timeout: 45000 
     });
 
-    // Wait for critical elements with timeout
+    // Увеличиваем таймаут ожидания элементов
     await Promise.race([
       page.waitForSelector('.auto-content_title'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for title')), 15000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for title')), 30000))
     ]);
 
     const carData = await page.evaluate(() => {
@@ -211,6 +218,9 @@ export async function postToTelegram(url) {
       };
     });
 
+    // Добавляем задержку перед кликом
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
     // Click gallery button with retry
     for (let i = 0; i < 3; i++) {
       try {
@@ -218,18 +228,18 @@ export async function postToTelegram(url) {
         break;
       } catch (error) {
         if (i === 2) throw error;
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
-    // Wait for photo container with timeout
+    // Увеличиваем таймаут ожидания фотографий
     await Promise.race([
       page.waitForSelector('.megaphoto-container'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for photos')), 15000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for photos')), 30000))
     ]);
 
-    // Short delay for images to load
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Увеличиваем задержку для загрузки изображений
+    await new Promise(resolve => setTimeout(resolve, 8000));
 
     const imageUrls = await page.evaluate(() => {
       const figures = document.querySelectorAll('.megaphoto-container figure img');
@@ -239,6 +249,9 @@ export async function postToTelegram(url) {
     if (!imageUrls.length) {
       throw new Error('No images found');
     }
+
+    // Добавляем задержку перед обработкой фотографий
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     return await sendPhotosToTelegram(
       imageUrls,
