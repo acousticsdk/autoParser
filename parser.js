@@ -483,6 +483,7 @@ async function runGarbageCollection() {
 
 let isUpdating = false;
 let updateTimeout = null;
+let lastUpdateStartTime = null;
 
 async function updateData() {
     if (isUpdating) {
@@ -492,6 +493,7 @@ async function updateData() {
 
     try {
         isUpdating = true;
+        lastUpdateStartTime = Date.now();
         console.log(`\n${moment().format('HH:mm')} - Starting update...`);
         
         await processPendingSMS();
@@ -514,12 +516,21 @@ async function updateData() {
             clearTimeout(updateTimeout);
         }
         
+        // Вычисляем, сколько времени прошло с начала обновления
+        const elapsedTime = Date.now() - lastUpdateStartTime;
+        
+        // Вычисляем, сколько времени осталось до следующего обновления
+        const remainingTime = Math.max(0, UPDATE_INTERVAL - elapsedTime);
+        
+        console.log(`Update took ${Math.round(elapsedTime / 1000)} seconds`);
+        console.log(`Next update in ${Math.round(remainingTime / 1000)} seconds`);
+        
         // Устанавливаем новый таймаут для следующего обновления
         updateTimeout = setTimeout(() => {
             const currentTime = moment().format('HH:mm:ss');
             console.log(`\nStarting new update cycle... [${currentTime}]`);
             updateData();
-        }, UPDATE_INTERVAL);
+        }, remainingTime);
     }
 }
 
