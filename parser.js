@@ -482,6 +482,7 @@ async function runGarbageCollection() {
 } 
 
 let isUpdating = false;
+let updateTimeout = null;
 
 async function updateData() {
     if (isUpdating) {
@@ -491,14 +492,14 @@ async function updateData() {
 
     try {
         isUpdating = true;
-        console.log(`\n${moment().format('HH:mm')} - Starting update...`);
+        const startTime = moment();
+        console.log(`\n${startTime.format('HH:mm')} - Starting update...`);
         
         await processPendingSMS();
         
         const cars = await parsePage();
         if (cars.length > 0) {
             await processNewCars(cars);
-            
             setTimeout(runGarbageCollection, 30000);
         } else {
             console.log('No cars found in this update');
@@ -507,24 +508,7 @@ async function updateData() {
         console.error('Error in update cycle:', error);
     } finally {
         isUpdating = false;
-        processedUrls.clear(); // Очищаем кэш обработанных URL в конце цикла
-    }
-}
-
-async function startParsing() {
-    try {
-        await storage.load();
-        
-        // Запускаем первое обновление
-        await updateData();
-        
-        // Устанавливаем интервал для последующих обновлений
-        setInterval(updateData, UPDATE_INTERVAL);
-        
-        console.log(`Parser started. Updates will occur every ${UPDATE_INTERVAL / 1000 / 60} minutes`);
-    } catch (error) {
-        console.error('Critical error:', error);
-        process.exit(1);
+        processedUrls.clear();
     }
 }
 
@@ -664,8 +648,28 @@ const server = http.createServer(async (req, res) => {
     }
 });
 
+// Функция запуска парсера
+async function startParser() {
+    try {
+        await storage.load();
+        console.log('Database connected successfully');
+        
+        // Запускаем первое обновление
+        await updateData();
+        
+        // Устанавливаем интервал обновления
+        setInterval(updateData, UPDATE_INTERVAL);
+        
+        console.log(`Parser started. Updates will occur every ${UPDATE_INTERVAL / 1000 / 60} minutes`);
+    } catch (error) {
+        console.error('Critical error:', error);
+        process.exit(1);
+    }
+}
+
+// Запускаем сервер и парсер
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
     console.log(`Server is running on port ${port}`);
-    startParsing();
+    startParser();
 });
