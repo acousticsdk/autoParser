@@ -86,7 +86,14 @@ async function simulateGalleryBrowsing(page) {
 }
 
 function normalizeText(text) {
-  return text ? text.replace(/\s+/g, ' ').trim() : text;
+  if (!text) return text;
+  
+  // Если это информация о двигателе, удаляем содержимое в скобках
+  if (text.includes('л') && text.includes('(')) {
+    text = text.replace(/\s*\([^)]*\)\s*/g, ' ');
+  }
+  
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 function getRandomPhotos(photos, count) {
