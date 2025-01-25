@@ -22,6 +22,17 @@ if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir);
 }
 
+// Функция для обработки ошибок Telegram
+async function handleTelegramError(error) {
+  if (error.message.includes('429') && error.message.includes('retry after')) {
+    const retryAfter = parseInt(error.message.match(/retry after (\d+)/)[1]) || 10;
+    console.log(`Rate limit hit. Waiting ${retryAfter} seconds before retry...`);
+    await new Promise(resolve => setTimeout(resolve, (retryAfter + 1) * 1000));
+    return true;
+  }
+  return false;
+}
+
 // Функции для эмуляции человеческого поведения
 function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -33,10 +44,7 @@ function getRandomDelay(min, max) {
 
 async function simulateHumanBehavior(page) {
   try {
-    // Случайная задержка перед действиями
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
-
-    // Случайные движения мыши
     for (let i = 0; i < getRandomInt(2, 4); i++) {
       await page.mouse.move(
         getRandomInt(100, 700),
@@ -45,13 +53,9 @@ async function simulateHumanBehavior(page) {
       );
       await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
     }
-
-    // Случайный скролл
     await page.evaluate(() => {
       window.scrollBy(0, Math.floor(Math.random() * 200) + 100);
     });
-
-    // Ждем завершения скролла
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1000)));
   } catch (error) {
     console.error('Error in simulateHumanBehavior:', error);
@@ -61,7 +65,6 @@ async function simulateHumanBehavior(page) {
 function normalizeText(text) {
   if (!text) return text;
   
-  // Если это информация о двигателе, удаляем содержимое в скобках
   if (text.includes('л') && text.includes('(')) {
     text = text.replace(/\s*\([^)]*\)\s*/g, ' ');
   }
@@ -174,9 +177,22 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
       caption: index === 0 ? caption : undefined
     }));
 
-    await bot.sendMediaGroup(channelId, media);
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        await bot.sendMediaGroup(channelId, media);
+        break;
+      } catch (error) {
+        if (await handleTelegramError(error)) {
+          retries--;
+          continue;
+        }
+        throw error;
+      }
+    }
 
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Добавляем стандартную задержку между отправками
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     for (const photoPath of processedPhotos) {
       fs.unlink(photoPath, () => {});

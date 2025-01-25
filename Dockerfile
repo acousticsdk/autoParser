@@ -12,7 +12,7 @@ RUN npm ci
 COPY . .
 
 # Set memory limit
-ENV NODE_OPTIONS=--max-old-space-size=512
+ENV NODE_OPTIONS=--max-old-space-size=2048
 
 # Start the application with garbage collection enabled
 CMD ["node", "--expose-gc", "parser.js"]
