@@ -47,10 +47,14 @@ async function simulateHumanBehavior(page) {
 
   // Случайный скролл
   await page.evaluate(() => {
-    const scrollSteps = getRandomInt(3, 6);
+    function browserRandomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+    
+    const scrollSteps = browserRandomInt(3, 6);
     const scrollInterval = setInterval(() => {
-      window.scrollBy(0, getRandomInt(100, 200));
-    }, getRandomInt(100, 300));
+      window.scrollBy(0, browserRandomInt(100, 200));
+    }, browserRandomInt(100, 300));
 
     setTimeout(() => {
       clearInterval(scrollInterval);
