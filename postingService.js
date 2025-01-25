@@ -32,56 +32,29 @@ function getRandomDelay(min, max) {
 }
 
 async function simulateHumanBehavior(page) {
-  // Случайная задержка перед действиями
-  await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
+  try {
+    // Случайная задержка перед действиями
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
 
-  // Случайные движения мыши
-  for (let i = 0; i < getRandomInt(2, 4); i++) {
-    await page.mouse.move(
-      getRandomInt(100, 700),
-      getRandomInt(100, 500),
-      { steps: getRandomInt(5, 10) }
-    );
-    await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
-  }
-
-  // Случайный скролл
-  await page.evaluate(() => {
-    function browserRandomInt(min, max) {
-      return Math.floor(Math.random() * (max - min + 1)) + min;
+    // Случайные движения мыши
+    for (let i = 0; i < getRandomInt(2, 4); i++) {
+      await page.mouse.move(
+        getRandomInt(100, 700),
+        getRandomInt(100, 500),
+        { steps: getRandomInt(5, 10) }
+      );
+      await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
     }
-    
-    const scrollSteps = browserRandomInt(3, 6);
-    const scrollInterval = setInterval(() => {
-      window.scrollBy(0, browserRandomInt(100, 200));
-    }, browserRandomInt(100, 300));
 
-    setTimeout(() => {
-      clearInterval(scrollInterval);
-    }, scrollSteps * 300);
-  });
+    // Случайный скролл
+    await page.evaluate(() => {
+      window.scrollBy(0, Math.floor(Math.random() * 200) + 100);
+    });
 
-  // Ждем завершения скролла
-  await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
-}
-
-async function simulateGalleryBrowsing(page) {
-  // Имитация просмотра галереи
-  for (let i = 0; i < getRandomInt(3, 5); i++) {
-    // Случайные движения мыши над фотографиями
-    const photos = await page.$$('.megaphoto-container figure img');
-    if (photos.length > 0) {
-      const randomPhoto = photos[getRandomInt(0, photos.length - 1)];
-      const box = await randomPhoto.boundingBox();
-      if (box) {
-        await page.mouse.move(
-          box.x + box.width / 2 + getRandomInt(-20, 20),
-          box.y + box.height / 2 + getRandomInt(-20, 20),
-          { steps: getRandomInt(5, 10) }
-        );
-      }
-    }
-    await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1500)));
+    // Ждем завершения скролла
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1000)));
+  } catch (error) {
+    console.error('Error in simulateHumanBehavior:', error);
   }
 }
 
@@ -219,8 +192,7 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
 
 async function createBrowserWithProfile() {
   const browserProfile = getRandomBrowserProfile();
-  console.log(`Using browser profile: ${browserProfile.name} ${browserProfile.version}`);
-
+  
   const browser = await puppeteer.launch({
     headless: 'new',
     args: [
@@ -230,14 +202,42 @@ async function createBrowserWithProfile() {
       '--disable-accelerated-2d-canvas',
       '--disable-gpu',
       '--window-size=1920,1080',
-      '--js-flags="--max-old-space-size=256"'
+      '--js-flags="--max-old-space-size=256"',
+      '--disable-extensions',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-default-apps',
+      '--mute-audio',
+      '--no-default-browser-check',
+      '--no-first-run',
+      '--disable-background-networking',
+      '--disable-sync',
+      '--disable-translate',
+      '--hide-scrollbars',
+      '--metrics-recording-only',
+      '--no-zygote',
+      '--single-process'
     ]
   });
 
   const page = await browser.newPage();
+  
+  // Отключаем загрузку изображений и других ресурсов
+  await page.setRequestInterception(true);
+  page.on('request', (request) => {
+    if (['image', 'stylesheet', 'font', 'media'].includes(request.resourceType())) {
+      request.abort();
+    } else {
+      request.continue();
+    }
+  });
+
   await page.setUserAgent(browserProfile.userAgent);
   await page.setViewport(browserProfile.viewport);
   await page.setExtraHTTPHeaders(browserProfile.headers);
+
+  // Устанавливаем таймауты
+  page.setDefaultNavigationTimeout(60000);
+  page.setDefaultTimeout(30000);
 
   return { browser, page, profile: browserProfile };
 }
@@ -247,27 +247,22 @@ async function tryPostToTelegram(url) {
   let page = null;
   
   try {
-    // Создаем новый браузер с новым профилем для каждой попытки
+    console.log('Creating browser instance...');
     const { browser: newBrowser, page: newPage } = await createBrowserWithProfile();
     browser = newBrowser;
     page = newPage;
 
-    page.setDefaultNavigationTimeout(45000);
-
     console.log('Navigating to page...');
     await page.goto(url, { 
-      waitUntil: 'networkidle0',
-      timeout: 45000 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 
     });
 
-    // Эмулируем человеческое поведение после загрузки страницы
     console.log('Simulating human behavior...');
     await simulateHumanBehavior(page);
 
-    await Promise.race([
-      page.waitForSelector('.auto-content_title'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for title')), 30000))
-    ]);
+    console.log('Waiting for title element...');
+    await page.waitForSelector('.auto-content_title', { timeout: 30000 });
 
     const carData = await page.evaluate(() => {
       const getData = (selector) => {
@@ -307,17 +302,18 @@ async function tryPostToTelegram(url) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, galleryButton);
 
-    // Небольшая задержка перед кликом
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
 
-    // Кликаем на кнопку галереи
     await galleryButton.click({ delay: getRandomDelay(50, 150) });
     
-    await page.waitForSelector('.megaphoto-container', { timeout: 10000 });
-    
-    // Эмулируем просмотр галереи
-    console.log('Browsing gallery...');
-    await simulateGalleryBrowsing(page);
+    console.log('Waiting for gallery to load...');
+    await page.waitForFunction(() => {
+      const container = document.querySelector('.megaphoto-container');
+      const images = container ? container.querySelectorAll('figure img') : [];
+      return images.length > 0;
+    }, { timeout: 30000 });
+
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     console.log('Getting image URLs from gallery...');
     const imageUrls = await page.evaluate(() => {
@@ -347,18 +343,25 @@ async function tryPostToTelegram(url) {
     console.error('Error occurred:', error);
     throw error;
   } finally {
+    if (page) {
+      try {
+        await page.close();
+      } catch (e) {
+        console.error('Error closing page:', e);
+      }
+    }
     if (browser) {
       try {
         await browser.close();
-      } catch (error) {
-        console.error('Error closing browser:', error);
+      } catch (e) {
+        console.error('Error closing browser:', e);
       }
     }
   }
 }
 
 export async function postToTelegram(url) {
-  const MAX_RETRIES = 2;
+  const MAX_RETRIES = 3;
   
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -369,8 +372,9 @@ export async function postToTelegram(url) {
       console.error(`Error in attempt ${attempt + 1}: ${error.message}`);
       
       if (attempt < MAX_RETRIES) {
-        console.log(`Waiting 5 seconds before retry ${attempt + 2}...`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        const delay = (attempt + 1) * 5000; // Увеличиваем задержку с каждой попыткой
+        console.log(`Waiting ${delay/1000} seconds before retry ${attempt + 2}...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
     }
