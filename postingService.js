@@ -22,18 +22,25 @@ if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir);
 }
 
-// Функция для обработки ошибок Telegram
 async function handleTelegramError(error) {
+  // Обработка ошибки превышения лимита
   if (error.message.includes('429') && error.message.includes('retry after')) {
     const retryAfter = parseInt(error.message.match(/retry after (\d+)/)[1]) || 10;
     console.log(`Rate limit hit. Waiting ${retryAfter} seconds before retry...`);
     await new Promise(resolve => setTimeout(resolve, (retryAfter + 1) * 1000));
     return true;
   }
+  
+  // Обработка ошибки разрыва соединения
+  if (error.message.includes('socket hang up') || error.message.includes('ETIMEDOUT')) {
+    console.log('Connection error detected. Waiting 15 seconds before retry...');
+    await new Promise(resolve => setTimeout(resolve, 15000));
+    return true;
+  }
+  
   return false;
 }
 
-// Функции для эмуляции человеческого поведения
 function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -143,7 +150,7 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
     }
 
     const processedPhotos = await Promise.all(
-        selectedPhotos.map((photo, index) => downloadAndCropImage(photo, index))
+      selectedPhotos.map((photo, index) => downloadAndCropImage(photo, index))
     );
 
     let caption = `🚘 ${normalizeText(title)}\n\n`;
@@ -177,15 +184,25 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
       caption: index === 0 ? caption : undefined
     }));
 
-    let retries = 3;
+    let retries = 5; // Увеличиваем количество попыток
+    let delay = 5000; // Начальная задержка 5 секунд
+
     while (retries > 0) {
       try {
         await bot.sendMediaGroup(channelId, media);
         break;
       } catch (error) {
+        console.error(`Telegram error (${retries} retries left):`, error.message);
+        
         if (await handleTelegramError(error)) {
           retries--;
-          continue;
+          if (retries > 0) {
+            // Увеличиваем задержку с каждой попыткой
+            delay *= 1.5;
+            console.log(`Waiting ${delay/1000} seconds before next attempt...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
         }
         throw error;
       }
@@ -194,6 +211,7 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
     // Добавляем стандартную задержку между отправками
     await new Promise(resolve => setTimeout(resolve, 3000));
 
+    // Очищаем временные файлы
     for (const photoPath of processedPhotos) {
       fs.unlink(photoPath, () => {});
       fs.unlink(photoPath.replace('cropped_', 'image_'), () => {});

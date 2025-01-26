@@ -41,10 +41,10 @@ const MIN_SIZE = 11;
 const MAX_SIZE = 60;
 
 // Update interval (in milliseconds)
-const UPDATE_INTERVAL = 10 * 60 * 1000; // 8 minutes between full update
+const UPDATE_INTERVAL = 10 * 60 * 1000; // 14 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 59;
+const FRESH_LISTING_THRESHOLD = 50;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
@@ -58,6 +58,9 @@ const MAX_MESSAGES_PER_CYCLE = 50;
 
 // Database pagination
 const ITEMS_PER_PAGE = 50;
+
+// Maximum retries for second channel
+const MAX_SECOND_CHANNEL_RETRIES = 3;
 
 // Initialize services
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -369,6 +372,39 @@ async function parsePage() {
     }
 }
 
+async function tryPostToSecondChannel(url, retryCount = 0) {
+    try {
+        console.log(`\nAttempting to post to second channel (attempt ${retryCount + 1}/${MAX_SECOND_CHANNEL_RETRIES})...`);
+        const result = await postToTelegram(url);
+        
+        if (result) {
+            console.log('✓ Successfully posted to second channel');
+            return true;
+        }
+        
+        if (retryCount < MAX_SECOND_CHANNEL_RETRIES - 1) {
+            const delay = (retryCount + 1) * 10000; // Увеличиваем задержку с каждой попыткой
+            console.log(`Waiting ${delay/1000} seconds before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return tryPostToSecondChannel(url, retryCount + 1);
+        }
+        
+        console.log('❌ Failed to post to second channel after all retries');
+        return false;
+    } catch (error) {
+        console.error('Error posting to second channel:', error);
+        
+        if (retryCount < MAX_SECOND_CHANNEL_RETRIES - 1) {
+            const delay = (retryCount + 1) * 10000;
+            console.log(`Error occurred. Waiting ${delay/1000} seconds before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return tryPostToSecondChannel(url, retryCount + 1);
+        }
+        
+        return false;
+    }
+}
+
 async function processCarSequentially(car) {
     if (processedUrls.has(car.url)) {
         console.log(`Skipping duplicate URL in current cycle: ${car.url}`);
@@ -407,21 +443,32 @@ async function processCarSequentially(car) {
             
             const message = `🚗 Нове авто!\n\n${car.title} (додано ${addedTime})\n\n💰 ${car.price} $${phoneInfo}\n\n${car.url}`;
             const mainChannelResult = await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, message);
-            console.log(`Main channel send result: ${JSON.stringify(mainChannelResult)}`);
             
-            // 4. Send to second channel
+            if (!mainChannelResult) {
+                console.log('❌ Failed to send to main channel');
+                return false;
+            }
+            
+            console.log('✓ Successfully sent to main channel');
+            
+            // 4. Send to second channel with retries
             console.log('\n4. Sending to second Telegram channel...');
-            const secondChannelResult = await postToTelegram(car.url);
-            console.log(`Second channel posting result: ${secondChannelResult}`);
+            const secondChannelResult = await tryPostToSecondChannel(car.url);
             
-            // 5. Mark as processed
-            if (mainChannelResult && secondChannelResult) {
+            // Если отправка в основной канал успешна, помечаем как обработанное
+            if (mainChannelResult) {
                 console.log('\n5. Marking car as sent...');
                 const markingResult = await storage.markCarAsSent(car.url);
                 console.log(`Marking result: ${markingResult}`);
                 
                 processedUrls.add(car.url);
                 console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
+                
+                // Если отправка во второй канал не удалась, логируем это, но считаем обработку успешной
+                if (!secondChannelResult) {
+                    console.log('⚠️ Note: Failed to send to second channel, but main processing was successful');
+                }
+                
                 return true;
             }
         } catch (error) {
