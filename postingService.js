@@ -190,6 +190,10 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
     while (retries > 0) {
       try {
         await bot.sendMediaGroup(channelId, media);
+        
+        // Добавляем 30-секундную паузу после успешной отправки
+        console.log('Waiting 30 seconds after successful posting...');
+        await new Promise(resolve => setTimeout(resolve, 30000));
         break;
       } catch (error) {
         console.error(`Telegram error (${retries} retries left):`, error.message);
@@ -207,9 +211,6 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
         throw error;
       }
     }
-
-    // Добавляем стандартную задержку между отправками
-    await new Promise(resolve => setTimeout(resolve, 3000));
 
     // Очищаем временные файлы
     for (const photoPath of processedPhotos) {
