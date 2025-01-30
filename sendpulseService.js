@@ -38,7 +38,7 @@ export class SendPulseService {
             const contactResponse = await axios.post(
                 `${this.baseUrl}/crm/v1/contacts`,
                 {
-                    firstName: `Contact ${cleanPhone}`, // Добавляем обязательное поле firstName
+                    firstName: title, // Используем название машины как имя контакта
                     channels: [{
                         type: 'phone',
                         value: cleanPhone
@@ -70,7 +70,7 @@ export class SendPulseService {
             const numericPrice = parseInt(price.replace(/\D/g, ''));
             
             // Сначала создаем контакт
-            const contactId = await this.createContact(cleanPhone);
+            const contactId = await this.createContact(cleanPhone, title);
             
             // Создаем сделку с ценой и названием машины
             const dealResponse = await axios.post(
@@ -91,7 +91,7 @@ export class SendPulseService {
                             value: url
                         }
                     ],
-                    contact: [contactId]
+                    contact: contactId // Теперь передаем просто ID контакта, а не массив
                 },
                 {
                     headers: {
