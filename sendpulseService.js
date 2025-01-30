@@ -51,11 +51,11 @@ export class SendPulseService {
                 }],
                 customFields: [
                     {
-                        id: 'phone',  // Если ID кастомного поля "phone" в CRM равен "phone"
+                        id: 780917,  // Если ID кастомного поля "phone" в CRM равен "phone"
                         value: cleanPhone
                     },
                     {
-                        id: 'website_url', // Если ID кастомного поля "website_url" в CRM равен "website_url"
+                        id: 780918, // Если ID кастомного поля "website_url" в CRM равен "website_url"
                         value: url
                     }
                 ]
