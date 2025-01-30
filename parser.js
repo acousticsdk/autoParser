@@ -399,7 +399,7 @@ async function processCarSequentially(car) {
             console.log('\n3. Sending to SendPulse...');
             const phoneNumber = phoneNumbers[0];
             if (phoneNumber && phoneNumber !== 'Телефон на сайті') {
-                const sendpulseResult = await sendpulseService.addToAutoriaFlow(phoneNumber, car.url);
+                const sendpulseResult = await sendpulseService.addDeal(phoneNumber, car.url);
                 
                 if (!sendpulseResult) {
                     console.log('❌ Failed to send to SendPulse');
