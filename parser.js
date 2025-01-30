@@ -41,7 +41,7 @@ const MIN_SIZE = 11;
 const MAX_SIZE = 60;
 
 // Update interval (in milliseconds)
-const UPDATE_INTERVAL = 10 * 60 * 1000; // 14 minutes between full update
+const UPDATE_INTERVAL = 10 * 60 * 1000; // 10 minutes between full update
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 50;
