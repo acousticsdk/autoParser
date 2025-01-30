@@ -184,14 +184,13 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
       caption: index === 0 ? caption : undefined
     }));
 
-    let retries = 5; // Увеличиваем количество попыток
-    let delay = 5000; // Начальная задержка 5 секунд
+    let retries = 5;
+    let delay = 5000;
 
     while (retries > 0) {
       try {
         await bot.sendMediaGroup(channelId, media);
         
-        // Добавляем 30-секундную паузу после успешной отправки
         console.log('Waiting 30 seconds after successful posting...');
         await new Promise(resolve => setTimeout(resolve, 30000));
         break;
@@ -201,7 +200,6 @@ async function sendPhotosToTelegram(photos, title, price, engineInfo, mileage, t
         if (await handleTelegramError(error)) {
           retries--;
           if (retries > 0) {
-            // Увеличиваем задержку с каждой попыткой
             delay *= 1.5;
             console.log(`Waiting ${delay/1000} seconds before next attempt...`);
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -256,7 +254,6 @@ async function createBrowserWithProfile() {
 
   const page = await browser.newPage();
   
-  // Отключаем загрузку изображений и других ресурсов
   await page.setRequestInterception(true);
   page.on('request', (request) => {
     if (['image', 'stylesheet', 'font', 'media'].includes(request.resourceType())) {
@@ -270,7 +267,6 @@ async function createBrowserWithProfile() {
   await page.setViewport(browserProfile.viewport);
   await page.setExtraHTTPHeaders(browserProfile.headers);
 
-  // Устанавливаем таймауты
   page.setDefaultNavigationTimeout(60000);
   page.setDefaultTimeout(30000);
 
@@ -332,40 +328,33 @@ async function tryPostToTelegram(url) {
       throw new Error('Gallery button not found');
     }
 
-    // Прокручиваем к кнопке галереи
     await page.evaluate(element => {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, galleryButton);
 
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
-
     await galleryButton.click({ delay: getRandomDelay(50, 150) });
-    
-    console.log('Waiting for gallery to load...');
-    await page.waitForFunction(() => {
+
+    console.log('Waiting for gallery to load and getting image URLs...');
+    const imageUrls = await page.waitForFunction(() => {
       const container = document.querySelector('.megaphoto-container');
       const images = container ? container.querySelectorAll('figure img') : [];
-      return images.length > 0;
-    }, { timeout: 30000 });
-
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    console.log('Getting image URLs from gallery...');
-    const imageUrls = await page.evaluate(() => {
-      const figures = document.querySelectorAll('.megaphoto-container figure img');
-      return Array.from(figures)
+      if (images.length === 0) return null;
+      
+      return Array.from(images)
         .map(img => img.src)
         .filter(src => src && !src.includes('data:image'));
-    });
+    }, { timeout: 30000 });
 
-    console.log(`Found ${imageUrls.length} images in gallery`);
+    const urls = await imageUrls.jsonValue();
+    console.log(`Found ${urls.length} images in gallery`);
 
-    if (!imageUrls.length) {
+    if (!urls || urls.length === 0) {
       throw new Error('No images found in gallery');
     }
 
     return await sendPhotosToTelegram(
-      imageUrls,
+      urls,
       carData.title,
       carData.price,
       carData.engineInfo,
@@ -407,7 +396,7 @@ export async function postToTelegram(url) {
       console.error(`Error in attempt ${attempt + 1}: ${error.message}`);
       
       if (attempt < MAX_RETRIES) {
-        const delay = (attempt + 1) * 5000; // Увеличиваем задержку с каждой попыткой
+        const delay = (attempt + 1) * 5000;
         console.log(`Waiting ${delay/1000} seconds before retry ${attempt + 2}...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
