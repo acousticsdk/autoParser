@@ -62,28 +62,25 @@ export class SendPulseService {
             // Получаем ID созданной сделки
             const dealId = dealResponse.data.data.id;
 
-            // Добавляем атрибуты к сделке
-            await axios.post(
-                `${this.baseUrl}/crm/v1/deals/${dealId}/attributes`,
-                {
-                    attributes: [
-                        {
-                            id: 780917,
-                            value: cleanPhone
-                        },
-                        {
-                            id: 780918,
-                            value: url
+            // Добавляем атрибуты к сделке по одному
+            for (const attribute of [
+                { attributeId: 780917, value: cleanPhone },
+                { attributeId: 780918, value: url }
+            ]) {
+                await axios.post(
+                    `${this.baseUrl}/crm/v1/deals/${dealId}/attributes`,
+                    {
+                        attributeId: attribute.attributeId,
+                        value: attribute.value
+                    },
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
                         }
-                    ]
-                },
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
                     }
-                }
-            );
+                );
+            }
 
             console.log(`✓ Successfully added deal with attributes: ${phone}`);
             return true;
