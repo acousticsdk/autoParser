@@ -37,19 +37,18 @@ export class SendPulseService {
             // Очищаем номер телефона от всех нецифровых символов
             const cleanPhone = phone.replace(/\D/g, '');
             
-            // Генерируем случайный ID для контакта (5-значное число)
-            const contactId = Math.floor(10000 + Math.random() * 90000);
-            
             const response = await axios.post(
                 `${this.baseUrl}/crm/v1/deals`,
                 {
                     pipelineId: 130957,
                     stepId: 451337,
-                    name: `Лид с сайта: ${phone}`,
-                    contact: {
-                        name: contactId, // Используем числовой ID вместо строки
-                        phone: parseInt(cleanPhone) // Преобразуем строку в число
-                    },
+                    name: `Лид с AUTO.RIA`,
+                    contacts: [{
+                        channels: [{
+                            type: 'phone',
+                            value: cleanPhone
+                        }]
+                    }],
                     customFields: {
                         website_url: url
                     }
