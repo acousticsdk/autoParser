@@ -48,8 +48,8 @@ const UPDATE_INTERVAL = 10 * 60 * 1000; // 10 minutes between full update
 const FRESH_LISTING_THRESHOLD = 50;
 
 // SMS sending time window
-const SMS_START_HOUR = 9;
-const SMS_END_HOUR = 18;
+const SMS_START_HOUR = 10;
+const SMS_END_HOUR = 11;
 
 // SMS delay between sends (in milliseconds)
 const SMS_SEND_DELAY = 3000; // 3 seconds
