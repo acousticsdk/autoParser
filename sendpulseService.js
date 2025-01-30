@@ -30,7 +30,7 @@ export class SendPulseService {
         }
     }
 
-    async createContact(phone) {
+    async createContact(phone, title) {
         try {
             const token = await this.getToken();
             const cleanPhone = phone.replace(/\D/g, '');
@@ -38,7 +38,7 @@ export class SendPulseService {
             const contactResponse = await axios.post(
                 `${this.baseUrl}/crm/v1/contacts`,
                 {
-                    firstName: title, // Используем название машины как имя контакта
+                    firstName: title || 'Новый контакт', // Используем название машины как имя контакта или дефолтное значение
                     channels: [{
                         type: 'phone',
                         value: cleanPhone
