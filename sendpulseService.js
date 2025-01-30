@@ -38,7 +38,7 @@ export class SendPulseService {
             const contactResponse = await axios.post(
                 `${this.baseUrl}/crm/v1/contacts`,
                 {
-                    name: cleanPhone,
+                    firstName: `Contact ${cleanPhone}`, // Добавляем обязательное поле firstName
                     channels: [{
                         type: 'phone',
                         value: cleanPhone
