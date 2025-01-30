@@ -30,21 +30,36 @@ export class SendPulseService {
         }
     }
 
-    async addDeal(phone, url) {
+    async addDeal(phone, url, price, title) {
         try {
             const token = await this.getToken();
             
             // Очищаем номер телефона от всех нецифровых символов
             const cleanPhone = phone.replace(/\D/g, '');
             
-            // Сначала создаем сделку
+            // Преобразуем цену в число
+            const numericPrice = parseInt(price.replace(/\D/g, ''));
+            
+            // Создаем сделку с ценой и названием машины
             const dealResponse = await axios.post(
                 `${this.baseUrl}/crm/v1/deals`,
                 {
                     pipelineId: 130957,
                     stepId: 451337,
-                    name: `Лид с AUTO.RIA`,
-                    contacts: [{
+                    name: title,
+                    price: numericPrice,
+                    currency: 'USD',
+                    attributes: [
+                        {
+                            attributeId: 780917,
+                            value: cleanPhone
+                        },
+                        {
+                            attributeId: 780918,
+                            value: url
+                        }
+                    ],
+                    contact: [{
                         channels: [{
                             type: 'phone',
                             value: cleanPhone
@@ -59,30 +74,7 @@ export class SendPulseService {
                 }
             );
 
-            // Получаем ID созданной сделки
-            const dealId = dealResponse.data.data.id;
-
-            // Добавляем атрибуты к сделке по одному
-            for (const attribute of [
-                { attributeId: 780917, value: cleanPhone },
-                { attributeId: 780918, value: url }
-            ]) {
-                await axios.post(
-                    `${this.baseUrl}/crm/v1/deals/${dealId}/attributes`,
-                    {
-                        attributeId: attribute.attributeId,
-                        value: attribute.value
-                    },
-                    {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }
-                );
-            }
-
-            console.log(`✓ Successfully added deal with attributes: ${phone}`);
+            console.log(`✓ Successfully added deal "${title}" with price ${numericPrice} USD for phone: ${phone}`);
             return true;
         } catch (error) {
             console.error('Error in SendPulse CRM operation:', error.response ? error.response.data : error);

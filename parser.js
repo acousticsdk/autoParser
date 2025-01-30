@@ -43,7 +43,7 @@ const MAX_SIZE = 60;
 const UPDATE_INTERVAL = 10 * 60 * 1000; // 10 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 50;
+const FRESH_LISTING_THRESHOLD = 59;
 
 // SMS sending time window
 const SMS_START_HOUR = 10;
@@ -259,31 +259,61 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     }
 }
 
-async function processPendingSMS() {
-    try {
-        const pendingSMS = await storage.getPendingSMSToSend();
-        if (pendingSMS.length === 0) return;
-
-        console.log(`\nProcessing ${pendingSMS.length} pending SMS messages...`);
-        
-        for (const sms of pendingSMS) {
-            const result = await smsService.sendSMS([sms.phoneNumber], sms.message);
-            
-            if (result) {
-                await storage.removePendingSMS([sms._id]);
-                console.log(`✓ Pending SMS sent to ${sms.phoneNumber} for car: ${sms.carTitle}`);
-                
-                if (pendingSMS.indexOf(sms) < pendingSMS.length - 1) {
-                    console.log('Waiting 3 seconds before sending next SMS...');
-                    await new Promise(resolve => setTimeout(resolve, SMS_SEND_DELAY));
-                }
-            }
-        }
-        
-        console.log('✓ Finished processing pending SMS messages');
-    } catch (error) {
-        console.error('Error processing pending SMS:', error);
+async function processCarSequentially(car) {
+    if (processedUrls.has(car.url)) {
+        console.log(`Skipping duplicate URL in current cycle: ${car.url}`);
+        return false;
     }
+
+    console.log('\n=== Starting car processing ===');
+    console.log(`URL: ${car.url}`);
+    
+    const isAlreadySent = await storage.isCarSent(car.url);
+    console.log(`Already sent check: ${isAlreadySent}`);
+    
+    if (!isAlreadySent) {
+        console.log(`\nProcessing car: ${car.title}`);
+        const addedTime = car.date.format('HH:mm');
+        
+        try {
+            // 1. Get phone numbers
+            console.log('\n1. Getting phone numbers...');
+            const phoneNumbers = await getPhoneNumber(car.url);
+            console.log(`Phone numbers received: ${JSON.stringify(phoneNumbers)}`);
+            
+            // 2. Handle phone numbers and send SMS
+            console.log('\n2. Handling phone numbers...');
+            const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
+            console.log(`Phone handling result: ${phoneHandlingResult}`);
+            
+            // 3. Send to SendPulse
+            console.log('\n3. Sending to SendPulse...');
+            const phoneNumber = phoneNumbers[0];
+            if (phoneNumber && phoneNumber !== 'Телефон на сайті') {
+                const sendpulseResult = await sendpulseService.addDeal(phoneNumber, car.url, car.price, car.title);
+                
+                if (!sendpulseResult) {
+                    console.log('❌ Failed to send to SendPulse');
+                    return false;
+                }
+                
+                console.log('✓ Successfully sent to SendPulse');
+                
+                // Mark as sent if SendPulse was successful
+                console.log('\n4. Marking car as sent...');
+                const markingResult = await storage.markCarAsSent(car.url);
+                console.log(`Marking result: ${markingResult}`);
+                
+                processedUrls.add(car.url);
+                console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
+                
+                return true;
+            }
+        } catch (error) {
+            console.error('\n❌ Error in car processing:', error);
+        }
+    }
+    return false;
 }
 
 async function parsePage() {
@@ -366,63 +396,6 @@ async function parsePage() {
         console.error('Error parsing page:', error);
         return [];
     }
-}
-
-async function processCarSequentially(car) {
-    if (processedUrls.has(car.url)) {
-        console.log(`Skipping duplicate URL in current cycle: ${car.url}`);
-        return false;
-    }
-
-    console.log('\n=== Starting car processing ===');
-    console.log(`URL: ${car.url}`);
-    
-    const isAlreadySent = await storage.isCarSent(car.url);
-    console.log(`Already sent check: ${isAlreadySent}`);
-    
-    if (!isAlreadySent) {
-        console.log(`\nProcessing car: ${car.title}`);
-        const addedTime = car.date.format('HH:mm');
-        
-        try {
-            // 1. Get phone numbers
-            console.log('\n1. Getting phone numbers...');
-            const phoneNumbers = await getPhoneNumber(car.url);
-            console.log(`Phone numbers received: ${JSON.stringify(phoneNumbers)}`);
-            
-            // 2. Handle phone numbers and send SMS
-            console.log('\n2. Handling phone numbers...');
-            const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
-            console.log(`Phone handling result: ${phoneHandlingResult}`);
-            
-            // 3. Send to SendPulse
-            console.log('\n3. Sending to SendPulse...');
-            const phoneNumber = phoneNumbers[0];
-            if (phoneNumber && phoneNumber !== 'Телефон на сайті') {
-                const sendpulseResult = await sendpulseService.addDeal(phoneNumber, car.url);
-                
-                if (!sendpulseResult) {
-                    console.log('❌ Failed to send to SendPulse');
-                    return false;
-                }
-                
-                console.log('✓ Successfully sent to SendPulse');
-                
-                // Mark as sent if SendPulse was successful
-                console.log('\n4. Marking car as sent...');
-                const markingResult = await storage.markCarAsSent(car.url);
-                console.log(`Marking result: ${markingResult}`);
-                
-                processedUrls.add(car.url);
-                console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
-                
-                return true;
-            }
-        } catch (error) {
-            console.error('\n❌ Error in car processing:', error);
-        }
-    }
-    return false;
 }
 
 async function processNewCars(cars) {
