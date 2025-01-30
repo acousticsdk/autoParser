@@ -45,7 +45,7 @@ const MAX_SIZE = 60;
 const UPDATE_INTERVAL = 10 * 60 * 1000; // 10 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 50;
+const FRESH_LISTING_THRESHOLD = 59;
 
 // SMS sending time window
 const SMS_START_HOUR = 10;
