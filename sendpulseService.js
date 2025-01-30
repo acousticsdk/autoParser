@@ -30,6 +30,35 @@ export class SendPulseService {
         }
     }
 
+    async createContact(phone) {
+        try {
+            const token = await this.getToken();
+            const cleanPhone = phone.replace(/\D/g, '');
+
+            const contactResponse = await axios.post(
+                `${this.baseUrl}/crm/v1/contacts`,
+                {
+                    name: cleanPhone,
+                    channels: [{
+                        type: 'phone',
+                        value: cleanPhone
+                    }]
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            return contactResponse.data.id;
+        } catch (error) {
+            console.error('Error creating contact:', error.response ? error.response.data : error);
+            throw error;
+        }
+    }
+
     async addDeal(phone, url, price, title) {
         try {
             const token = await this.getToken();
@@ -39,6 +68,9 @@ export class SendPulseService {
             
             // Преобразуем цену в число
             const numericPrice = parseInt(price.replace(/\D/g, ''));
+            
+            // Сначала создаем контакт
+            const contactId = await this.createContact(cleanPhone);
             
             // Создаем сделку с ценой и названием машины
             const dealResponse = await axios.post(
@@ -59,12 +91,7 @@ export class SendPulseService {
                             value: url
                         }
                     ],
-                    contact: [{
-                        channels: [{
-                            type: 'phone',
-                            value: cleanPhone
-                        }]
-                    }]
+                    contact: [contactId]
                 },
                 {
                     headers: {
