@@ -25,22 +25,27 @@ export class SendPulseService {
             this.tokenExpires = Date.now() + (response.data.expires_in * 1000);
             return this.token;
         } catch (error) {
-            console.error('Error getting SendPulse token:', error);
+            console.error('Error getting SendPulse token:', error.response ? error.response.data : error);
             throw error;
         }
     }
 
-    async addToAutoriaFlow(phone, url) {
+    async addDeal(phone, url) {
         try {
             const token = await this.getToken();
             
             const response = await axios.post(
-                `${this.baseUrl}/automations/process`,
+                `${this.baseUrl}/crm/v1/deals`, // Новый эндпоинт для CRM
                 {
-                    flow_name: 'АВТОРІА',
-                    variables: {
-                        phone: phone,
-                        url: url
+                    name: `Лид с сайта: ${phone}`, // Название сделки
+                    pipeline_id: "130957", // ID воронки (нужно получить из SendPulse)
+                    stage_id: "451337", // ID этапа сделки (нужно получить из SendPulse)
+                    contact: {
+                        name: "Новый клиент",
+                        phone: phone
+                    },
+                    custom_fields: {
+                        website_url: url
                     }
                 },
                 {
@@ -51,10 +56,10 @@ export class SendPulseService {
                 }
             );
 
-            console.log(`✓ Successfully added to SendPulse flow: ${phone}`);
+            console.log(`✓ Successfully added deal: ${phone}`);
             return true;
         } catch (error) {
-            console.error('Error adding to SendPulse flow:', error);
+            console.error('Error adding deal to SendPulse CRM:', error.response ? error.response.data : error);
             return false;
         }
     }
