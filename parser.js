@@ -176,7 +176,7 @@ async function tryGetPhoneNumbers(browser, url) {
 }
 
 async function getPhoneNumber(url) {
-    const MAX_RETRIES = 2;
+    const MAX_RETRIES = 5; // Увеличено с 2 до 5 попыток
     
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         let browser = null;
