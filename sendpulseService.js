@@ -35,16 +35,16 @@ export class SendPulseService {
             const token = await this.getToken();
             
             const response = await axios.post(
-                `${this.baseUrl}/crm/v1/deals`, // Новый эндпоинт для CRM
+                `${this.baseUrl}/crm/v1/deals`,
                 {
-                    name: `Лид с сайта: ${phone}`, // Название сделки
-                    pipeline_id: "130957", // ID воронки (нужно получить из SendPulse)
-                    stage_id: "451337", // ID этапа сделки (нужно получить из SendPulse)
+                    pipelineId: 130957, // Убрали кавычки, т.к. должно быть числом
+                    stepId: 451337, // Убрали кавычки, т.к. должно быть числом
+                    name: `Лид с сайта: ${phone}`,
                     contact: {
                         name: "Новый клиент",
-                        phone: phone
+                        phone: phone.replace(/\D/g, '') // Удаляем все нецифровые символы из номера
                     },
-                    custom_fields: {
+                    customFields: {
                         website_url: url
                     }
                 },
