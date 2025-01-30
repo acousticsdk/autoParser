@@ -34,15 +34,21 @@ export class SendPulseService {
         try {
             const token = await this.getToken();
             
+            // Очищаем номер телефона от всех нецифровых символов
+            const cleanPhone = phone.replace(/\D/g, '');
+            
+            // Генерируем случайный ID для контакта (5-значное число)
+            const contactId = Math.floor(10000 + Math.random() * 90000);
+            
             const response = await axios.post(
                 `${this.baseUrl}/crm/v1/deals`,
                 {
-                    pipelineId: 130957, // Убрали кавычки, т.к. должно быть числом
-                    stepId: 451337, // Убрали кавычки, т.к. должно быть числом
+                    pipelineId: 130957,
+                    stepId: 451337,
                     name: `Лид с сайта: ${phone}`,
                     contact: {
-                        name: "Новый клиент",
-                        phone: phone.replace(/\D/g, '') // Удаляем все нецифровые символы из номера
+                        name: contactId, // Используем числовой ID вместо строки
+                        phone: parseInt(cleanPhone) // Преобразуем строку в число
                     },
                     customFields: {
                         website_url: url
