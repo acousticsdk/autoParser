@@ -1,11 +1,13 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import moment from 'moment';
+import TelegramBot from 'node-telegram-bot-api';
 import http from 'http';
 import { Storage } from './storage.js';
 import { SMSService } from './smsService.js';
 import { getRandomBrowserProfile } from './browsers.js';
 import { SendPulseService } from './sendpulseService.js';
+import { postToTelegram } from './postingService.js';
 import puppeteer from 'puppeteer';
 import 'dotenv/config';
 
@@ -43,11 +45,11 @@ const MAX_SIZE = 60;
 const UPDATE_INTERVAL = 10 * 60 * 1000; // 10 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 59;
+const FRESH_LISTING_THRESHOLD = 50;
 
 // SMS sending time window
-const SMS_START_HOUR = 10;
-const SMS_END_HOUR = 11;
+const SMS_START_HOUR = 9;
+const SMS_END_HOUR = 18;
 
 // SMS delay between sends (in milliseconds)
 const SMS_SEND_DELAY = 3000; // 3 seconds
@@ -58,7 +60,11 @@ const MAX_MESSAGES_PER_CYCLE = 50;
 // Database pagination
 const ITEMS_PER_PAGE = 50;
 
+// Maximum retries for second channel
+const MAX_SECOND_CHANNEL_RETRIES = 3;
+
 // Initialize services
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 const storage = new Storage();
 const smsService = new SMSService();
 const sendpulseService = new SendPulseService();
@@ -286,6 +292,39 @@ async function processPendingSMS() {
     }
 }
 
+async function tryPostToSecondChannel(url, retryCount = 0) {
+    try {
+        console.log(`\nAttempting to post to second channel (attempt ${retryCount + 1}/${MAX_SECOND_CHANNEL_RETRIES})...`);
+        const result = await postToTelegram(url);
+        
+        if (result) {
+            console.log('✓ Successfully posted to second channel');
+            return true;
+        }
+        
+        if (retryCount < MAX_SECOND_CHANNEL_RETRIES - 1) {
+            const delay = (retryCount + 1) * 10000;
+            console.log(`Waiting ${delay/1000} seconds before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return tryPostToSecondChannel(url, retryCount + 1);
+        }
+        
+        console.log('❌ Failed to post to second channel after all retries');
+        return false;
+    } catch (error) {
+        console.error('Error posting to second channel:', error);
+        
+        if (retryCount < MAX_SECOND_CHANNEL_RETRIES - 1) {
+            const delay = (retryCount + 1) * 10000;
+            console.log(`Error occurred. Waiting ${delay/1000} seconds before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return tryPostToSecondChannel(url, retryCount + 1);
+        }
+        
+        return false;
+    }
+}
+
 async function processCarSequentially(car) {
     if (processedUrls.has(car.url)) {
         console.log(`Skipping duplicate URL in current cycle: ${car.url}`);
@@ -326,13 +365,22 @@ async function processCarSequentially(car) {
                 
                 console.log('✓ Successfully sent to SendPulse');
                 
+                // 4. Send to second channel with retries
+                console.log('\n4. Sending to second Telegram channel...');
+                const secondChannelResult = await tryPostToSecondChannel(car.url);
+                
                 // Mark as sent if SendPulse was successful
-                console.log('\n4. Marking car as sent...');
+                console.log('\n5. Marking car as sent...');
                 const markingResult = await storage.markCarAsSent(car.url);
                 console.log(`Marking result: ${markingResult}`);
                 
                 processedUrls.add(car.url);
                 console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
+                
+                // Если отправка во второй канал не удалась, логируем это, но считаем обработку успешной
+                if (!secondChannelResult) {
+                    console.log('⚠️ Note: Failed to send to second channel, but main processing was successful');
+                }
                 
                 return true;
             }
