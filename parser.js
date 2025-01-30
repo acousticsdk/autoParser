@@ -259,6 +259,33 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     }
 }
 
+async function processPendingSMS() {
+    try {
+        const pendingSMS = await storage.getPendingSMSToSend();
+        if (pendingSMS.length === 0) return;
+
+        console.log(`\nProcessing ${pendingSMS.length} pending SMS messages...`);
+        
+        for (const sms of pendingSMS) {
+            const result = await smsService.sendSMS([sms.phoneNumber], sms.message);
+            
+            if (result) {
+                await storage.removePendingSMS([sms._id]);
+                console.log(`✓ Pending SMS sent to ${sms.phoneNumber} for car: ${sms.carTitle}`);
+                
+                if (pendingSMS.indexOf(sms) < pendingSMS.length - 1) {
+                    console.log('Waiting 3 seconds before sending next SMS...');
+                    await new Promise(resolve => setTimeout(resolve, SMS_SEND_DELAY));
+                }
+            }
+        }
+        
+        console.log('✓ Finished processing pending SMS messages');
+    } catch (error) {
+        console.error('Error processing pending SMS:', error);
+    }
+}
+
 async function processCarSequentially(car) {
     if (processedUrls.has(car.url)) {
         console.log(`Skipping duplicate URL in current cycle: ${car.url}`);
