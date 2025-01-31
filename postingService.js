@@ -23,7 +23,6 @@ if (!fs.existsSync(imagesDir)) {
 }
 
 async function handleTelegramError(error) {
-  // Обработка ошибки превышения лимита
   if (error.message.includes('429') && error.message.includes('retry after')) {
     const retryAfter = parseInt(error.message.match(/retry after (\d+)/)[1]) || 10;
     console.log(`Rate limit hit. Waiting ${retryAfter} seconds before retry...`);
@@ -31,7 +30,6 @@ async function handleTelegramError(error) {
     return true;
   }
   
-  // Обработка ошибки разрыва соединения
   if (error.message.includes('socket hang up') || error.message.includes('ETIMEDOUT')) {
     console.log('Connection error detected. Waiting 15 seconds before retry...');
     await new Promise(resolve => setTimeout(resolve, 15000));
@@ -268,9 +266,64 @@ async function createBrowserWithProfile() {
   await page.setExtraHTTPHeaders(browserProfile.headers);
 
   page.setDefaultNavigationTimeout(60000);
-  page.setDefaultTimeout(30000);
+  page.setDefaultTimeout(45000); // Увеличил таймаут по умолчанию
 
   return { browser, page, profile: browserProfile };
+}
+
+async function waitForGalleryLoad(page) {
+  let attempts = 3;
+  let delay = 5000;
+  
+  while (attempts > 0) {
+    try {
+      console.log(`Waiting for gallery to load (${attempts} attempts left)...`);
+      
+      // Ждем появления контейнера галереи
+      await page.waitForSelector('.megaphoto-container', { timeout: 45000 });
+      
+      // Даем дополнительное время для загрузки изображений
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Проверяем, что изображения действительно загрузились
+      const imageUrls = await page.evaluate(() => {
+        const container = document.querySelector('.megaphoto-container');
+        const images = container ? container.querySelectorAll('figure img') : [];
+        return Array.from(images)
+          .map(img => img.src)
+          .filter(src => src && !src.includes('data:image'));
+      });
+      
+      if (imageUrls.length > 0) {
+        console.log(`Found ${imageUrls.length} images in gallery`);
+        return imageUrls;
+      }
+      
+      throw new Error('No images found after gallery load');
+    } catch (error) {
+      console.log(`Gallery load attempt failed: ${error.message}`);
+      attempts--;
+      
+      if (attempts > 0) {
+        console.log(`Waiting ${delay/1000} seconds before next attempt...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 1.5;
+        
+        // Попробуем переоткрыть галерею
+        try {
+          const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
+          if (galleryButton) {
+            await galleryButton.click({ delay: getRandomDelay(50, 150) });
+          }
+        } catch (e) {
+          console.log('Failed to reopen gallery:', e.message);
+        }
+        
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 async function tryPostToTelegram(url) {
@@ -293,7 +346,7 @@ async function tryPostToTelegram(url) {
     await simulateHumanBehavior(page);
 
     console.log('Waiting for title element...');
-    await page.waitForSelector('.auto-content_title', { timeout: 30000 });
+    await page.waitForSelector('.auto-content_title', { timeout: 45000 });
 
     const carData = await page.evaluate(() => {
       const getData = (selector) => {
@@ -335,19 +388,8 @@ async function tryPostToTelegram(url) {
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
     await galleryButton.click({ delay: getRandomDelay(50, 150) });
 
-    console.log('Waiting for gallery to load and getting image URLs...');
-    const imageUrls = await page.waitForFunction(() => {
-      const container = document.querySelector('.megaphoto-container');
-      const images = container ? container.querySelectorAll('figure img') : [];
-      if (images.length === 0) return null;
-      
-      return Array.from(images)
-        .map(img => img.src)
-        .filter(src => src && !src.includes('data:image'));
-    }, { timeout: 30000 });
-
-    const urls = await imageUrls.jsonValue();
-    console.log(`Found ${urls.length} images in gallery`);
+    // Используем новую функцию для ожидания загрузки галереи
+    const urls = await waitForGalleryLoad(page);
 
     if (!urls || urls.length === 0) {
       throw new Error('No images found in gallery');
