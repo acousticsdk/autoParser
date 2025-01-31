@@ -365,23 +365,21 @@ async function processCarSequentially(car) {
                 
                 console.log('✓ Successfully sent to SendPulse');
                 
-                // 4. Send to second channel with retries
-                console.log('\n4. Sending to second Telegram channel...');
-                const secondChannelResult = await tryPostToSecondChannel(car.url);
-                
-                // Mark as sent if SendPulse was successful
-                console.log('\n5. Marking car as sent...');
+                // Отмечаем как отправленное сразу после успешной отправки в SendPulse
+                console.log('\n4. Marking car as sent...');
                 const markingResult = await storage.markCarAsSent(car.url);
                 console.log(`Marking result: ${markingResult}`);
                 
-                processedUrls.add(car.url);
-                console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
+                // 5. Send to second channel with retries
+                console.log('\n5. Sending to second Telegram channel...');
+                const secondChannelResult = await tryPostToSecondChannel(car.url);
                 
-                // Если отправка во второй канал не удалась, логируем это, но считаем обработку успешной
                 if (!secondChannelResult) {
-                    console.log('⚠️ Note: Failed to send to second channel, but main processing was successful');
+                    console.log('⚠️ Failed to send to second channel, but main processing was successful');
                 }
                 
+                processedUrls.add(car.url);
+                console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
                 return true;
             }
         } catch (error) {
