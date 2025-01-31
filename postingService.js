@@ -271,81 +271,14 @@ async function createBrowserWithProfile() {
   return { browser, page, profile: browserProfile };
 }
 
-async function tryPostToTelegram(url) {
-  let browser = null;
-  let page = null;
+async function waitForGalleryLoad(page) {
   let attempts = 3;
   let delay = 5000;
   
   while (attempts > 0) {
     try {
-      if (browser) {
-        try {
-          await browser.close();
-        } catch (e) {
-          console.error('Error closing browser:', e);
-        }
-      }
-
       console.log(`Waiting for gallery to load (${attempts} attempts left)...`);
       
-      console.log('Creating browser instance...');
-      const { browser: newBrowser, page: newPage } = await createBrowserWithProfile();
-      browser = newBrowser;
-      page = newPage;
-
-      console.log('Navigating to page...');
-      await page.goto(url, { 
-        waitUntil: 'domcontentloaded',
-        timeout: 60000 
-      });
-
-      console.log('Simulating human behavior...');
-      await simulateHumanBehavior(page);
-
-      console.log('Waiting for title element...');
-      await page.waitForSelector('.auto-content_title', { timeout: 45000 });
-
-      const carData = await page.evaluate(() => {
-        const getData = (selector) => {
-          const element = document.querySelector(selector);
-          return element ? element.textContent.replace(/\s+/g, ' ').trim() : '';
-        };
-
-        const getSpecValue = (label) => {
-          const labelElement = Array.from(document.querySelectorAll('dd span.label'))
-            .find(el => el.textContent.trim() === label);
-          if (labelElement) {
-            const valueSpan = labelElement.parentElement.querySelector('span.argument');
-            return valueSpan ? valueSpan.textContent.replace(/\s+/g, ' ').trim() : '';
-          }
-          return '';
-        };
-
-        return {
-          title: getData('.auto-content_title'),
-          price: getData('section.price div.price_value strong'),
-          engineInfo: getSpecValue('Двигун'),
-          transmission: getSpecValue('Коробка передач'),
-          drivetrain: getSpecValue('Привід'),
-          mileage: getSpecValue('Пробіг'),
-          description: getData('.additional-data.show-line .full-description')
-        };
-      });
-
-      console.log('Opening gallery...');
-      const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
-      if (!galleryButton) {
-        throw new Error('Gallery button not found');
-      }
-
-      await page.evaluate(element => {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, galleryButton);
-
-      await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
-      await galleryButton.click({ delay: getRandomDelay(50, 150) });
-
       // Ждем появления контейнера галереи
       await page.waitForSelector('.megaphoto-container', { timeout: 45000 });
       
@@ -361,28 +294,12 @@ async function tryPostToTelegram(url) {
           .filter(src => src && !src.includes('data:image'));
       });
       
-      if (!imageUrls || imageUrls.length === 0) {
-        throw new Error('No images found in gallery');
+      if (imageUrls.length > 0) {
+        console.log(`Found ${imageUrls.length} images in gallery`);
+        return imageUrls;
       }
-
-      console.log(`Found ${imageUrls.length} images in gallery`);
-
-      const result = await sendPhotosToTelegram(
-        imageUrls,
-        carData.title,
-        carData.price,
-        carData.engineInfo,
-        carData.mileage,
-        carData.transmission,
-        carData.drivetrain,
-        carData.description
-      );
-
-      if (browser) {
-        await browser.close();
-      }
-
-      return result;
+      
+      throw new Error('No images found after gallery load');
     } catch (error) {
       console.log(`Gallery load attempt failed: ${error.message}`);
       attempts--;
@@ -391,21 +308,124 @@ async function tryPostToTelegram(url) {
         console.log(`Waiting ${delay/1000} seconds before next attempt...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 1.5;
+        
+        // Попробуем переоткрыть галерею
+        try {
+          const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
+          if (galleryButton) {
+            await galleryButton.click({ delay: getRandomDelay(50, 150) });
+          }
+        } catch (e) {
+          console.log('Failed to reopen gallery:', e.message);
+        }
+        
         continue;
       }
       throw error;
-    } finally {
-      if (browser) {
-        try {
-          await browser.close();
-        } catch (e) {
-          console.error('Error closing browser:', e);
-        }
-      }
     }
   }
   
   throw new Error('All attempts to load gallery failed');
+}
+
+async function tryPostToTelegram(url) {
+  let browser = null;
+  let page = null;
+  
+  try {
+    console.log('Creating browser instance...');
+    const { browser: newBrowser, page: newPage } = await createBrowserWithProfile();
+    browser = newBrowser;
+    page = newPage;
+
+    console.log('Navigating to page...');
+    await page.goto(url, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 
+    });
+
+    console.log('Simulating human behavior...');
+    await simulateHumanBehavior(page);
+
+    console.log('Waiting for title element...');
+    await page.waitForSelector('.auto-content_title', { timeout: 45000 });
+
+    const carData = await page.evaluate(() => {
+      const getData = (selector) => {
+        const element = document.querySelector(selector);
+        return element ? element.textContent.replace(/\s+/g, ' ').trim() : '';
+      };
+
+      const getSpecValue = (label) => {
+        const labelElement = Array.from(document.querySelectorAll('dd span.label'))
+          .find(el => el.textContent.trim() === label);
+        if (labelElement) {
+          const valueSpan = labelElement.parentElement.querySelector('span.argument');
+          return valueSpan ? valueSpan.textContent.replace(/\s+/g, ' ').trim() : '';
+        }
+        return '';
+      };
+
+      return {
+        title: getData('.auto-content_title'),
+        price: getData('section.price div.price_value strong'),
+        engineInfo: getSpecValue('Двигун'),
+        transmission: getSpecValue('Коробка передач'),
+        drivetrain: getSpecValue('Привід'),
+        mileage: getSpecValue('Пробіг'),
+        description: getData('.additional-data.show-line .full-description')
+      };
+    });
+
+    console.log('Opening gallery...');
+    const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
+    if (!galleryButton) {
+      throw new Error('Gallery button not found');
+    }
+
+    await page.evaluate(element => {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, galleryButton);
+
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
+    await galleryButton.click({ delay: getRandomDelay(50, 150) });
+
+    // Используем отдельную функцию для ожидания загрузки галереи
+    const urls = await waitForGalleryLoad(page);
+
+    if (!urls || urls.length === 0) {
+      throw new Error('No images found in gallery');
+    }
+
+    return await sendPhotosToTelegram(
+      urls,
+      carData.title,
+      carData.price,
+      carData.engineInfo,
+      carData.mileage,
+      carData.transmission,
+      carData.drivetrain,
+      carData.description
+    );
+  } catch (error) {
+    console.error('Error occurred:', error);
+    throw error;
+  } finally {
+    if (page) {
+      try {
+        await page.close();
+      } catch (e) {
+        console.error('Error closing page:', e);
+      }
+    }
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error('Error closing browser:', e);
+      }
+    }
+  }
 }
 
 export async function postToTelegram(url) {
