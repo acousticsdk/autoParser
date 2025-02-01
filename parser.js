@@ -82,20 +82,68 @@ function getRandomDelay(min, max) {
 }
 
 async function simulateHumanBehavior(page) {
+    // Initial pause before starting interactions
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(1500, 3000)));
+
+    // Perform multiple mouse movements with natural-looking paths
+    for (let i = 0; i < getRandomInt(4, 8); i++) {
+        const startX = getRandomInt(100, 800);
+        const startY = getRandomInt(100, 600);
+        const endX = getRandomInt(100, 800);
+        const endY = getRandomInt(100, 600);
+        
+        // Move mouse in steps to simulate natural movement
+        const steps = getRandomInt(10, 20);
+        for (let step = 0; step <= steps; step++) {
+            const x = startX + (endX - startX) * (step / steps);
+            const y = startY + (endY - startY) * (step / steps);
+            await page.mouse.move(x, y);
+            await new Promise(resolve => setTimeout(resolve, getRandomDelay(20, 50)));
+        }
+        
+        // Random pause between movements
+        await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
+    }
+
+    // Perform multiple scroll actions
+    for (let i = 0; i < getRandomInt(3, 6); i++) {
+        // Random scroll amount
+        const scrollAmount = getRandomInt(100, 400);
+        await page.evaluate((amount) => {
+            window.scrollBy({
+                top: amount,
+                behavior: 'smooth'
+            });
+        }, scrollAmount);
+        
+        // Pause between scrolls
+        await new Promise(resolve => setTimeout(resolve, getRandomDelay(800, 1500)));
+    }
+
+    // Final random pause
     await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
-    await page.mouse.move(getRandomInt(100, 700), getRandomInt(100, 500));
-    await new Promise(resolve => setTimeout(resolve, getRandomDelay(300, 800)));
-    await page.evaluate(() => {
-        const scrollAmount = Math.floor(Math.random() * 200) + 100;
-        window.scrollBy(0, scrollAmount);
-    });
-    await new Promise(resolve => setTimeout(resolve, getRandomDelay(500, 1000)));
 }
 
-async function tryGetPhoneNumbers(browser, url) {
+async function tryGetPhoneNumbers(url) {
+    let browser = null;
     let page = null;
+    
     try {
         console.log(`Attempting to get phone numbers for URL: ${url}`);
+        
+        browser = await puppeteer.launch({
+            headless: "new",
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--window-size=1920,1080',
+                '--js-flags="--max-old-space-size=256"'
+            ]
+        });
+        
         page = await browser.newPage();
         
         await page.setRequestInterception(true);
@@ -113,7 +161,7 @@ async function tryGetPhoneNumbers(browser, url) {
 
         console.log('Navigating to page...');
         await page.goto(url, { 
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle0',
             timeout: 30000 
         });
 
@@ -169,11 +217,19 @@ async function tryGetPhoneNumbers(browser, url) {
             try {
                 console.log('Closing page...');
                 await page.close();
-                global.gc && global.gc();
             } catch (e) {
                 console.error('Error closing page:', e.message);
             }
         }
+        if (browser) {
+            try {
+                console.log('Closing browser...');
+                await browser.close();
+            } catch (e) {
+                console.error('Error closing browser:', e.message);
+            }
+        }
+        global.gc && global.gc();
     }
 }
 
@@ -181,43 +237,12 @@ async function getPhoneNumber(url) {
     const MAX_RETRIES = 5;
     
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        let browser = null;
-        
         try {
             console.log(`Starting attempt ${attempt + 1}/${MAX_RETRIES + 1} to get phone number...`);
-            browser = await puppeteer.launch({
-                headless: "new",
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--disable-gpu',
-                    '--window-size=1920,1080',
-                    '--js-flags="--max-old-space-size=256"'
-                ]
-            });
-          
-            console.log('Browser launched successfully');
-            const phoneNumbers = await tryGetPhoneNumbers(browser, url);
-            
-            if (browser) {
-                console.log('Closing browser...');
-                await browser.close();
-            }
-            
+            const phoneNumbers = await tryGetPhoneNumbers(url);
             return phoneNumbers;
         } catch (error) {
             console.error(`Error in attempt ${attempt + 1}: ${error.message}`);
-            
-            if (browser) {
-                try {
-                    console.log('Closing browser after error...');
-                    await browser.close();
-                } catch (e) {
-                    console.error('Error closing browser:', e.message);
-                }
-            }
             
             if (attempt < MAX_RETRIES) {
                 console.log(`Waiting 5 seconds before retry ${attempt + 2}...`);
