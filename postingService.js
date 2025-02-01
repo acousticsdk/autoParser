@@ -271,35 +271,83 @@ async function createBrowserWithProfile() {
   return { browser, page, profile: browserProfile };
 }
 
-async function waitForGalleryLoad(page) {
+async function tryLoadGallery(url) {
+  let browser = null;
+  let page = null;
+  
+  try {
+    console.log('Creating new browser instance for gallery...');
+    const { browser: newBrowser, page: newPage } = await createBrowserWithProfile();
+    browser = newBrowser;
+    page = newPage;
+
+    console.log('Navigating to page...');
+    await page.goto(url, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 
+    });
+
+    console.log('Simulating human behavior...');
+    await simulateHumanBehavior(page);
+
+    console.log('Opening gallery...');
+    const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
+    if (!galleryButton) {
+      throw new Error('Gallery button not found');
+    }
+
+    await page.evaluate(element => {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, galleryButton);
+
+    await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
+    await galleryButton.click({ delay: getRandomDelay(50, 150) });
+
+    console.log('Waiting for gallery container...');
+    await page.waitForSelector('.megaphoto-container', { timeout: 45000 });
+    
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const imageUrls = await page.evaluate(() => {
+      const container = document.querySelector('.megaphoto-container');
+      const images = container ? container.querySelectorAll('figure img') : [];
+      return Array.from(images)
+        .map(img => img.src)
+        .filter(src => src && !src.includes('data:image'));
+    });
+    
+    if (imageUrls.length === 0) {
+      throw new Error('No images found in gallery');
+    }
+    
+    console.log(`Found ${imageUrls.length} images in gallery`);
+    return imageUrls;
+  } finally {
+    if (page) {
+      try {
+        await page.close();
+      } catch (e) {
+        console.error('Error closing page:', e);
+      }
+    }
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error('Error closing browser:', e);
+      }
+    }
+  }
+}
+
+async function waitForGalleryLoad(url) {
   let attempts = 3;
   let delay = 5000;
   
   while (attempts > 0) {
     try {
-      console.log(`Waiting for gallery to load (${attempts} attempts left)...`);
-      
-      // Ждем появления контейнера галереи
-      await page.waitForSelector('.megaphoto-container', { timeout: 45000 });
-      
-      // Даем дополнительное время для загрузки изображений
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Проверяем, что изображения действительно загрузились
-      const imageUrls = await page.evaluate(() => {
-        const container = document.querySelector('.megaphoto-container');
-        const images = container ? container.querySelectorAll('figure img') : [];
-        return Array.from(images)
-          .map(img => img.src)
-          .filter(src => src && !src.includes('data:image'));
-      });
-      
-      if (imageUrls.length > 0) {
-        console.log(`Found ${imageUrls.length} images in gallery`);
-        return imageUrls;
-      }
-      
-      throw new Error('No images found after gallery load');
+      console.log(`Attempting to load gallery (${attempts} attempts left)...`);
+      return await tryLoadGallery(url);
     } catch (error) {
       console.log(`Gallery load attempt failed: ${error.message}`);
       attempts--;
@@ -308,17 +356,6 @@ async function waitForGalleryLoad(page) {
         console.log(`Waiting ${delay/1000} seconds before next attempt...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 1.5;
-        
-        // Попробуем переоткрыть галерею
-        try {
-          const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
-          if (galleryButton) {
-            await galleryButton.click({ delay: getRandomDelay(50, 150) });
-          }
-        } catch (e) {
-          console.log('Failed to reopen gallery:', e.message);
-        }
-        
         continue;
       }
       throw error;
@@ -377,21 +414,8 @@ async function tryPostToTelegram(url) {
       };
     });
 
-    console.log('Opening gallery...');
-    const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
-    if (!galleryButton) {
-      throw new Error('Gallery button not found');
-    }
-
-    await page.evaluate(element => {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, galleryButton);
-
-    await new Promise(resolve => setTimeout(resolve, getRandomDelay(1000, 2000)));
-    await galleryButton.click({ delay: getRandomDelay(50, 150) });
-
-    // Используем отдельную функцию для ожидания загрузки галереи
-    const urls = await waitForGalleryLoad(page);
+    // Используем отдельную функцию для загрузки галереи с новым браузером
+    const urls = await waitForGalleryLoad(url);
 
     if (!urls || urls.length === 0) {
       throw new Error('No images found in gallery');
