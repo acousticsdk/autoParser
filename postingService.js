@@ -341,7 +341,7 @@ async function tryLoadGallery(url) {
 }
 
 async function waitForGalleryLoad(url) {
-  let attempts = 3;
+  let attempts = 2; // Уменьшено с 3 до 2
   let delay = 5000;
   
   while (attempts > 0) {
@@ -453,7 +453,7 @@ async function tryPostToTelegram(url) {
 }
 
 export async function postToTelegram(url) {
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 2; // Уменьшено с 3 до 2
   
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
