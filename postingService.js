@@ -265,8 +265,8 @@ async function createBrowserWithProfile() {
   await page.setViewport(browserProfile.viewport);
   await page.setExtraHTTPHeaders(browserProfile.headers);
 
-  page.setDefaultNavigationTimeout(60000);
-  page.setDefaultTimeout(45000);
+  page.setDefaultNavigationTimeout(20000);
+  page.setDefaultTimeout(20000);
 
   return { browser, page, profile: browserProfile };
 }
@@ -283,19 +283,20 @@ async function tryLoadGallery(url) {
 
     console.log('Navigating to page...');
     await page.goto(url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 60000 
+      waitUntil: 'networkidle0',
+      timeout: 20000 
     });
 
     console.log('Simulating human behavior...');
     await simulateHumanBehavior(page);
 
-    console.log('Opening gallery...');
+    console.log('Checking for gallery button...');
     const galleryButton = await page.$('.count-photo.right.mp.fl-r.unlink');
     if (!galleryButton) {
       throw new Error('Gallery button not found');
     }
 
+    console.log('Opening gallery...');
     await page.evaluate(element => {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, galleryButton);
@@ -304,13 +305,16 @@ async function tryLoadGallery(url) {
     await galleryButton.click({ delay: getRandomDelay(50, 150) });
 
     console.log('Waiting for gallery container...');
-    await page.waitForSelector('.megaphoto-container', { timeout: 45000 });
+    await page.waitForSelector('.megaphoto-container', { timeout: 20000 });
     
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     const imageUrls = await page.evaluate(() => {
       const container = document.querySelector('.megaphoto-container');
-      const images = container ? container.querySelectorAll('figure img') : [];
+      if (!container) {
+        return [];
+      }
+      const images = container.querySelectorAll('figure img');
       return Array.from(images)
         .map(img => img.src)
         .filter(src => src && !src.includes('data:image'));
@@ -340,31 +344,6 @@ async function tryLoadGallery(url) {
   }
 }
 
-async function waitForGalleryLoad(url) {
-  let attempts = 2; // Уменьшено с 3 до 2
-  let delay = 5000;
-  
-  while (attempts > 0) {
-    try {
-      console.log(`Attempting to load gallery (${attempts} attempts left)...`);
-      return await tryLoadGallery(url);
-    } catch (error) {
-      console.log(`Gallery load attempt failed: ${error.message}`);
-      attempts--;
-      
-      if (attempts > 0) {
-        console.log(`Waiting ${delay/1000} seconds before next attempt...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 1.5;
-        continue;
-      }
-      throw error;
-    }
-  }
-  
-  throw new Error('All attempts to load gallery failed');
-}
-
 async function tryPostToTelegram(url) {
   let browser = null;
   let page = null;
@@ -377,15 +356,15 @@ async function tryPostToTelegram(url) {
 
     console.log('Navigating to page...');
     await page.goto(url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 60000 
+      waitUntil: 'networkidle0',
+      timeout: 20000 
     });
 
     console.log('Simulating human behavior...');
     await simulateHumanBehavior(page);
 
     console.log('Waiting for title element...');
-    await page.waitForSelector('.auto-content_title', { timeout: 45000 });
+    await page.waitForSelector('.auto-content_title', { timeout: 20000 });
 
     const carData = await page.evaluate(() => {
       const getData = (selector) => {
@@ -414,8 +393,8 @@ async function tryPostToTelegram(url) {
       };
     });
 
-    // Используем отдельную функцию для загрузки галереи с новым браузером
-    const urls = await waitForGalleryLoad(url);
+    // Используем tryLoadGallery напрямую
+    const urls = await tryLoadGallery(url);
 
     if (!urls || urls.length === 0) {
       throw new Error('No images found in gallery');
@@ -453,7 +432,7 @@ async function tryPostToTelegram(url) {
 }
 
 export async function postToTelegram(url) {
-  const MAX_RETRIES = 2; // Уменьшено с 3 до 2
+  const MAX_RETRIES = 2;
   
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
