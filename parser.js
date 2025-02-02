@@ -61,7 +61,7 @@ const MAX_MESSAGES_PER_CYCLE = 50;
 const ITEMS_PER_PAGE = 50;
 
 // Maximum retries for second channel
-const MAX_SECOND_CHANNEL_RETRIES = 3;
+const MAX_SECOND_CHANNEL_RETRIES = 2;
 
 // Initialize services
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -234,7 +234,7 @@ async function tryGetPhoneNumbers(url) {
 }
 
 async function getPhoneNumber(url) {
-    const MAX_RETRIES = 5;
+    const MAX_RETRIES = 2;
     
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
@@ -416,84 +416,107 @@ async function processCarSequentially(car) {
 
 async function parsePage() {
     console.log('Parsing page...');
-    try {
-        const timestamp = Date.now();
-        const randomParam = Math.random().toString(36).substring(7);
-        const randomSize = getRandomInt(MIN_SIZE, MAX_SIZE);
-        const urlWithParams = `${BASE_URL}&size=${randomSize}&_=${timestamp}&nocache=${randomParam}`;
-        
-        const browserProfile = getRandomBrowserProfile();
-        
-        const axiosInstance = axios.create({
-            headers: {
-                ...commonHeaders,
-                ...browserProfile.headers
-            },
-            timeout: 30000,
-            validateStatus: function (status) {
-                return status >= 200 && status < 300;
-            },
-            decompress: true,
-            responseType: 'text',
-            maxRedirects: 5,
-            withCredentials: false
-        });
-        
-        const sessionParams = new URLSearchParams({
-            '_rand': Math.random().toString(36).substring(7),
-            'tz': browserProfile.timezoneOffset.toString(),
-            'sw': browserProfile.screenParams.resolution.width.toString(),
-            'sh': browserProfile.screenParams.resolution.height.toString(),
-            'cd': browserProfile.screenParams.colorDepth.toString(),
-            'v': Math.floor(Math.random() * 1000000).toString()
-        });
-        
-        const finalUrl = `${urlWithParams}&${sessionParams.toString()}`;
-        const response = await axiosInstance.get(finalUrl);
+    const MAX_RETRIES = 2;
+    
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const timestamp = Date.now();
+            const randomParam = Math.random().toString(36).substring(7);
+            const randomSize = getRandomInt(MIN_SIZE, MAX_SIZE);
+            const urlWithParams = `${BASE_URL}&size=${randomSize}&_=${timestamp}&nocache=${randomParam}`;
+            
+            const browserProfile = getRandomBrowserProfile();
+            
+            const axiosInstance = axios.create({
+                headers: {
+                    ...commonHeaders,
+                    ...browserProfile.headers
+                },
+                timeout: 30000,
+                validateStatus: function (status) {
+                    return status >= 200 && status < 300;
+                },
+                decompress: true,
+                responseType: 'text',
+                maxRedirects: 5,
+                withCredentials: false
+            });
+            
+            const sessionParams = new URLSearchParams({
+                '_rand': Math.random().toString(36).substring(7),
+                'tz': browserProfile.timezoneOffset.toString(),
+                'sw': browserProfile.screenParams.resolution.width.toString(),
+                'sh': browserProfile.screenParams.resolution.height.toString(),
+                'cd': browserProfile.screenParams.colorDepth.toString(),
+                'v': Math.floor(Math.random() * 1000000).toString()
+            });
+            
+            const finalUrl = `${urlWithParams}&${sessionParams.toString()}`;
+            const response = await axiosInstance.get(finalUrl);
 
-        console.log('Processing page content...');
+            console.log('Processing page content...');
 
-        const $ = cheerio.load(response.data, {
-            decodeEntities: false,
-            xmlMode: false,
-            lowerCaseTags: true
-        });
-        
-        const cars = [];
-        let carCount = 0;
+            const $ = cheerio.load(response.data, {
+                decodeEntities: false,
+                xmlMode: false,
+                lowerCaseTags: true
+            });
+            
+            const cars = [];
+            let carCount = 0;
 
-        $('section.ticket-item').each((_, element) => {
-            const dateElement = $(element).find('.footer_ticket span[data-add-date]');
-            const dateStr = dateElement.attr('data-add-date');
-            const link = $(element).find('div.item.ticket-title a.address');
-            const url = link.attr('href');
-            const title = link.attr('title');
-            const price = $(element).find('span.bold.size22.green[data-currency="USD"]').text().trim();
+            $('section.ticket-item').each((_, element) => {
+                const dateElement = $(element).find('.footer_ticket span[data-add-date]');
+                const dateStr = dateElement.attr('data-add-date');
+                const link = $(element).find('div.item.ticket-title a.address');
+                const url = link.attr('href');
+                const title = link.attr('title');
+                const price = $(element).find('span.bold.size22.green[data-currency="USD"]').text().trim();
 
-            if (dateStr && url && title) {
-                const parsedDate = moment(dateStr);
-                const car = {
-                    date: parsedDate,
-                    url,
-                    title,
-                    price: price || 'Ціна не вказана'
-                };
-                cars.push(car);
-               
-                carCount++;
+                if (dateStr && url && title) {
+                    const parsedDate = moment(dateStr);
+                    const car = {
+                        date: parsedDate,
+                        url,
+                        title,
+                        price: price || 'Ціна не вказана'
+                    };
+                    cars.push(car);
+                   
+                    carCount++;
+                }
+            });
+
+            // Очищаем память
+            $.root().empty();
+            response.data = null;
+            
+            console.log(`✓ Parsing completed. Found ${carCount} cars`);
+            return cars;
+        } catch (error) {
+            console.error(`Error in attempt ${attempt + 1}: ${error.message}`);
+            
+            if (error.response && error.response.status === 503) {
+                console.log('Received 503 error, waiting 20 seconds before retry...');
+                await new Promise(resolve => setTimeout(resolve, 20000));
+                
+                if (attempt < MAX_RETRIES) {
+                    continue;
+                }
             }
-        });
-
-        // Очищаем память
-        $.root().empty();
-        response.data = null;
-        
-        console.log(`✓ Parsing completed. Found ${carCount} cars`);
-        return cars;
-    } catch (error) {
-        console.error('Error parsing page:', error);
-        return [];
+            
+            if (attempt < MAX_RETRIES) {
+                console.log(`Waiting 5 seconds before retry ${attempt + 2}...`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                continue;
+            }
+            
+            console.error('Error parsing page:', error);
+            return [];
+        }
     }
+    
+    return [];
 }
 
 async function processNewCars(cars) {
