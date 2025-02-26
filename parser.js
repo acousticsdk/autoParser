@@ -260,13 +260,14 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     const phoneNumber = phoneNumbers[0];
     console.log(`Processing phone number for car ${car.title}: ${phoneNumber}`);
     
-    // Проверяем, существует ли номер в базе
+    // Проверяем, существует ли номер в базе перед сохранением
     const phoneExists = await storage.isPhoneNumberExists(phoneNumber);
     if (phoneExists) {
-        console.log(`Phone number ${phoneNumber} already exists in database, skipping processing...`);
-        return false;
+        console.log(`Phone number ${phoneNumber} already exists in database, skipping SMS handling...`);
+        return true; // Return true to continue processing the car
     }
     
+    // Сохраняем номер только если его еще нет в базе
     const saveResult = await storage.savePhoneNumber(phoneNumber, car);
     if (!saveResult) {
         console.log(`Failed to save phone number: ${phoneNumber}`);
@@ -379,38 +380,37 @@ async function processCarSequentially(car) {
             const phoneNumbers = await getPhoneNumber(car.url);
             console.log(`Phone numbers received: ${JSON.stringify(phoneNumbers)}`);
             
-            // 2. Handle phone numbers and send SMS
-            console.log('\n2. Handling phone numbers...');
-            const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
-            console.log(`Phone handling result: ${phoneHandlingResult}`);
-            
-            // 3. Check if phone number exists
-            console.log('\n3. Checking if phone number exists...');
+            // 2. Check if phone number exists before handling
             const phoneNumber = phoneNumbers[0];
+            console.log('\n2. Checking if phone number exists...');
             const phoneExists = await storage.isPhoneNumberExists(phoneNumber);
             
-            // 4. Send to SendPulse only if phone number is new
-            if (!phoneExists) {
-                console.log('Phone number is new, sending to SendPulse...');
+            if (phoneExists) {
+                console.log(`Phone number ${phoneNumber} already exists in database`);
+            } else {
+                // 3. Handle phone numbers and send SMS only if phone is new
+                console.log('\n3. Handling phone numbers...');
+                const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
+                console.log(`Phone handling result: ${phoneHandlingResult}`);
+                
+                // 4. Send to SendPulse only if phone number is new
+                console.log('\n4. Sending to SendPulse...');
                 const sendpulseResult = await sendpulseService.addDeal(phoneNumber, car.url, car.price, car.title);
                 
                 if (!sendpulseResult) {
                     console.log('❌ Failed to send to SendPulse');
-                    return false;
                 }
                 
                 console.log('✓ Successfully sent to SendPulse');
-            } else {
-                console.log('Phone number already exists, skipping SendPulse');
             }
             
             // 5. Mark car as sent regardless of whether the phone exists or not
-            console.log('\n4. Marking car as sent...');
+            console.log('\n5. Marking car as sent...');
             const markingResult = await storage.markCarAsSent(car.url);
             console.log(`Marking result: ${markingResult}`);
             
             // 6. Send to second channel with retries
-            console.log('\n5. Sending to second Telegram channel...');
+            console.log('\n6. Sending to second Telegram channel...');
             const secondChannelResult = await tryPostToSecondChannel(car.url);
             
             if (!secondChannelResult) {

@@ -95,7 +95,7 @@ export class Storage {
     async isPhoneNumberExists(phoneNumber) {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
-            if (!trimmedPhone) {
+            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
                 return false;
             }
 
@@ -111,17 +111,11 @@ export class Storage {
     async savePhoneNumber(phoneNumber, carInfo) {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
-            if (!trimmedPhone) {
+            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
                 return false;
             }
 
-            // Проверяем, существует ли уже такой номер
-            const exists = await this.isPhoneNumberExists(trimmedPhone);
-            if (exists) {
-                console.log(`Phone number ${trimmedPhone} already exists in database, skipping...`);
-                return false;
-            }
-
+            // Проверка перенесена в handlePhoneNumbers, здесь просто сохраняем
             const result = await this.db.collection(PHONE_NUMBERS_COLLECTION).insertOne({
                 phoneNumber: trimmedPhone,
                 carTitle: carInfo.title,
@@ -131,6 +125,10 @@ export class Storage {
 
             return result.acknowledged;
         } catch (error) {
+            if (error.code === 11000) {
+                // Если ошибка дубликата, считаем успешным
+                return true;
+            }
             console.error('Error saving phone number:', error);
             return false;
         }
@@ -171,7 +169,7 @@ export class Storage {
     async addPendingSMS(phoneNumber, carInfo, scheduledFor) {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
-            if (!trimmedPhone) {
+            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
                 return false;
             }
 
