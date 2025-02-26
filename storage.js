@@ -95,7 +95,7 @@ export class Storage {
     async isPhoneNumberExists(phoneNumber) {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
-            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+            if (!trimmedPhone) {
                 return false;
             }
 
@@ -111,7 +111,7 @@ export class Storage {
     async savePhoneNumber(phoneNumber, carInfo) {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
-            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+            if (!trimmedPhone) {
                 return false;
             }
 
@@ -171,7 +171,7 @@ export class Storage {
     async addPendingSMS(phoneNumber, carInfo, scheduledFor) {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
-            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+            if (!trimmedPhone) {
                 return false;
             }
 

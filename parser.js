@@ -269,7 +269,7 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     
     const saveResult = await storage.savePhoneNumber(phoneNumber, car);
     if (!saveResult) {
-        console.log(`Skipping SMS handling for invalid phone number: ${phoneNumber}`);
+        console.log(`Failed to save phone number: ${phoneNumber}`);
         return false;
     }
 
@@ -384,12 +384,13 @@ async function processCarSequentially(car) {
             const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
             console.log(`Phone handling result: ${phoneHandlingResult}`);
             
-            // 3. Send to SendPulse only if phone number is new
+            // 3. Check if phone number exists
             console.log('\n3. Checking if phone number exists...');
             const phoneNumber = phoneNumbers[0];
             const phoneExists = await storage.isPhoneNumberExists(phoneNumber);
             
-            if (!phoneExists && phoneNumber && phoneNumber !== 'Телефон на сайті') {
+            // 4. Send to SendPulse only if phone number is new
+            if (!phoneExists) {
                 console.log('Phone number is new, sending to SendPulse...');
                 const sendpulseResult = await sendpulseService.addDeal(phoneNumber, car.url, car.price, car.title);
                 
@@ -399,27 +400,26 @@ async function processCarSequentially(car) {
                 }
                 
                 console.log('✓ Successfully sent to SendPulse');
-                
-                // Отмечаем как отправленное сразу после успешной отправки в SendPulse
-                console.log('\n4. Marking car as sent...');
-                const markingResult = await storage.markCarAsSent(car.url);
-                console.log(`Marking result: ${markingResult}`);
-                
-                // 5. Send to second channel with retries
-                console.log('\n5. Sending to second Telegram channel...');
-                const secondChannelResult = await tryPostToSecondChannel(car.url);
-                
-                if (!secondChannelResult) {
-                    console.log('⚠️ Failed to send to second channel, but main processing was successful');
-                }
-                
-                processedUrls.add(car.url);
-                console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
-                return true;
             } else {
-                console.log('Phone number already exists or is invalid, skipping SendPulse and further processing');
-                return false;
+                console.log('Phone number already exists, skipping SendPulse');
             }
+            
+            // 5. Mark car as sent regardless of whether the phone exists or not
+            console.log('\n4. Marking car as sent...');
+            const markingResult = await storage.markCarAsSent(car.url);
+            console.log(`Marking result: ${markingResult}`);
+            
+            // 6. Send to second channel with retries
+            console.log('\n5. Sending to second Telegram channel...');
+            const secondChannelResult = await tryPostToSecondChannel(car.url);
+            
+            if (!secondChannelResult) {
+                console.log('⚠️ Failed to send to second channel, but main processing was successful');
+            }
+            
+            processedUrls.add(car.url);
+            console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
+            return true;
         } catch (error) {
             console.error('\n❌ Error in car processing:', error);
         }
