@@ -42,7 +42,7 @@ const MIN_SIZE = 11;
 const MAX_SIZE = 60;
 
 // Update interval (in milliseconds)
-const UPDATE_INTERVAL = 14 * 60 * 1000; // 10 minutes between full update
+const UPDATE_INTERVAL = 14 * 60 * 1000; // 14 minutes between full update
 
 // Fresh listings threshold (in minutes)
 const FRESH_LISTING_THRESHOLD = 59;
@@ -260,6 +260,13 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     const phoneNumber = phoneNumbers[0];
     console.log(`Processing phone number for car ${car.title}: ${phoneNumber}`);
     
+    // Проверяем, существует ли номер в базе
+    const phoneExists = await storage.isPhoneNumberExists(phoneNumber);
+    if (phoneExists) {
+        console.log(`Phone number ${phoneNumber} already exists in database, skipping processing...`);
+        return false;
+    }
+    
     const saveResult = await storage.savePhoneNumber(phoneNumber, car);
     if (!saveResult) {
         console.log(`Skipping SMS handling for invalid phone number: ${phoneNumber}`);
@@ -377,10 +384,13 @@ async function processCarSequentially(car) {
             const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
             console.log(`Phone handling result: ${phoneHandlingResult}`);
             
-            // 3. Send to SendPulse
-            console.log('\n3. Sending to SendPulse...');
+            // 3. Send to SendPulse only if phone number is new
+            console.log('\n3. Checking if phone number exists...');
             const phoneNumber = phoneNumbers[0];
-            if (phoneNumber && phoneNumber !== 'Телефон на сайті') {
+            const phoneExists = await storage.isPhoneNumberExists(phoneNumber);
+            
+            if (!phoneExists && phoneNumber && phoneNumber !== 'Телефон на сайті') {
+                console.log('Phone number is new, sending to SendPulse...');
                 const sendpulseResult = await sendpulseService.addDeal(phoneNumber, car.url, car.price, car.title);
                 
                 if (!sendpulseResult) {
@@ -406,6 +416,9 @@ async function processCarSequentially(car) {
                 processedUrls.add(car.url);
                 console.log(`\n✓ Successfully processed: ${car.title} (${addedTime})`);
                 return true;
+            } else {
+                console.log('Phone number already exists or is invalid, skipping SendPulse and further processing');
+                return false;
             }
         } catch (error) {
             console.error('\n❌ Error in car processing:', error);
@@ -550,7 +563,6 @@ async function processNewCars(cars) {
                 await new Promise(resolve => setTimeout(resolve, 3000));
             }
         }
-        global.gc && global.gc();
     }
 
     console.log(`\nFinished processing cars. Successfully processed: ${processedCount}/${carsToProcess.length}`);

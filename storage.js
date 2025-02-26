@@ -92,10 +92,33 @@ export class Storage {
         }
     }
 
+    async isPhoneNumberExists(phoneNumber) {
+        try {
+            const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
+            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+                return false;
+            }
+
+            const result = await this.db.collection(PHONE_NUMBERS_COLLECTION)
+                .findOne({ phoneNumber: trimmedPhone });
+            return !!result;
+        } catch (error) {
+            console.error('Error checking phone number existence:', error);
+            return false;
+        }
+    }
+
     async savePhoneNumber(phoneNumber, carInfo) {
         try {
             const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
             if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+                return false;
+            }
+
+            // Проверяем, существует ли уже такой номер
+            const exists = await this.isPhoneNumberExists(trimmedPhone);
+            if (exists) {
+                console.log(`Phone number ${trimmedPhone} already exists in database, skipping...`);
                 return false;
             }
 
