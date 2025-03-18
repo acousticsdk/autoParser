@@ -168,6 +168,10 @@ async function tryGetPhoneNumbers(url) {
         console.log('Simulating human behavior...');
         await simulateHumanBehavior(page);
 
+        // Get seller name
+        let sellerName = await page.$eval('.seller_info_name', el => el.textContent.trim())
+            .catch(() => 'Клієнт');
+
         console.log('Waiting for phone button...');
         await page.waitForSelector('.phone_show_link', { 
             visible: true, 
@@ -205,7 +209,10 @@ async function tryGetPhoneNumbers(url) {
         
         if (phoneNumbers.length > 0) {
             console.log(`Successfully retrieved phone numbers: ${phoneNumbers[0]}`);
-            return [phoneNumbers[0]];
+            return {
+                phones: [phoneNumbers[0]],
+                sellerName
+            };
         }
         
         throw new Error('No phone numbers found');
@@ -239,8 +246,8 @@ async function getPhoneNumber(url) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
             console.log(`Starting attempt ${attempt + 1}/${MAX_RETRIES + 1} to get phone number...`);
-            const phoneNumbers = await tryGetPhoneNumbers(url);
-            return phoneNumbers;
+            const result = await tryGetPhoneNumbers(url);
+            return result;
         } catch (error) {
             console.error(`Error in attempt ${attempt + 1}: ${error.message}`);
             
@@ -253,11 +260,14 @@ async function getPhoneNumber(url) {
     }
     
     console.log('All attempts failed, returning default phone message');
-    return ['Телефон на сайті'];
+    return {
+        phones: ['Телефон на сайті'],
+        sellerName: 'Клієнт'
+    };
 }
 
 async function handlePhoneNumbers(phoneNumbers, car) {
-    const phoneNumber = phoneNumbers[0];
+    const phoneNumber = phoneNumbers.phones[0];
     console.log(`Processing phone number for car ${car.title}: ${phoneNumber}`);
     
     // Проверяем, существует ли номер в базе перед сохранением
@@ -375,19 +385,20 @@ async function processCarSequentially(car) {
         const addedTime = car.date.format('HH:mm');
         
         try {
-            // 1. Get phone numbers
-            console.log('\n1. Getting phone numbers...');
-            const phoneNumbers = await getPhoneNumber(car.url);
-            console.log(`Phone numbers received: ${JSON.stringify(phoneNumbers)}`);
+            // 1. Get phone numbers and seller name
+            console.log('\n1. Getting phone numbers and seller info...');
+            const phoneData = await getPhoneNumber(car.url);
+            console.log(`Phone numbers received: ${JSON.stringify(phoneData.phones)}`);
+            console.log(`Seller name: ${phoneData.sellerName}`);
             
             // 2. Handle phone numbers and send SMS
             console.log('\n2. Handling phone numbers...');
-            const phoneHandlingResult = await handlePhoneNumbers(phoneNumbers, car);
+            const phoneHandlingResult = await handlePhoneNumbers(phoneData, car);
             console.log(`Phone handling result: ${phoneHandlingResult}`);
             
             // 3. Send to SendPulse
             console.log('\n3. Sending to SendPulse...');
-            const sendpulseResult = await sendpulseService.addDeal(phoneNumbers[0], car.url, car.price, car.title);
+            const sendpulseResult = await sendpulseService.addDeal(phoneData.phones[0], car.url, car.price, car.title, phoneData.sellerName);
             
             if (!sendpulseResult) {
                 console.log('❌ Failed to send to SendPulse');

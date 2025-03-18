@@ -76,15 +76,26 @@ export class SendPulseService {
         throw lastError;
     }
 
-    async createContact(phoneNumber, carTitle) {
+    formatPhoneNumber(phone) {
+        // Удаляем все нецифровые символы
+        const cleanPhone = phone.replace(/\D/g, '');
+        
+        // Убираем префикс 380 если он есть
+        const normalizedPhone = cleanPhone.replace(/^380/, '');
+        
+        // Добавляем +380
+        return '+380' + normalizedPhone;
+    }
+
+    async createContact(phoneNumber, name) {
         try {
-            const cleanPhone = phoneNumber.replace(/\D/g, '');
+            const formattedPhone = this.formatPhoneNumber(phoneNumber);
             
             const contactData = {
-                firstName: carTitle || 'Новый контакт',
+                firstName: name.trim(),
                 channels: [{
                     type: 'binotel_phone',
-                    value: '+380' + cleanPhone.replace(/^380/, '')
+                    value: formattedPhone
                 }]
             };
 
@@ -96,7 +107,7 @@ export class SendPulseService {
         }
     }
 
-    async addDeal(phone, url, price, title) {
+    async addDeal(phone, url, price, title, sellerName = 'Клієнт') {
         try {
             if (!phone || phone === 'Телефон на сайті') {
                 console.log('Invalid phone number, skipping SendPulse');
@@ -105,14 +116,14 @@ export class SendPulseService {
 
             console.log(`Creating SendPulse deal for ${phone} (${title})`);
             
-            // Очищаем номер телефона от всех нецифровых символов
-            const cleanPhone = phone.replace(/\D/g, '');
+            // Форматируем телефон
+            const formattedPhone = this.formatPhoneNumber(phone);
             
             // Преобразуем цену в число
             const numericPrice = parseInt(price.replace(/\D/g, ''));
             
             // Сначала создаем контакт
-            const contactId = await this.createContact(cleanPhone, title);
+            const contactId = await this.createContact(phone, sellerName);
             
             // Создаем сделку с ценой и названием машины
             const dealData = {
@@ -124,7 +135,7 @@ export class SendPulseService {
                 attributes: [
                     {
                         attributeId: 780917,
-                        value: cleanPhone
+                        value: formattedPhone // Используем отформатированный номер с +380
                     },
                     {
                         attributeId: 780918,
@@ -136,7 +147,7 @@ export class SendPulseService {
 
             await this.makeRequest('POST', '/crm/v1/deals', dealData);
 
-            console.log(`✓ Successfully added deal "${title}" with price ${numericPrice} USD for phone: ${phone}`);
+            console.log(`✓ Successfully added deal "${title}" with price ${numericPrice} USD for phone: ${formattedPhone}`);
             return true;
         } catch (error) {
             console.error('Error in SendPulse CRM operation:', error.response ? error.response.data : error);
