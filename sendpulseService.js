@@ -10,6 +10,7 @@ export class SendPulseService {
     }
 
     async getToken(forceRefresh = false) {
+        // Если токен есть и не истек, возвращаем его
         if (!forceRefresh && this.token && this.tokenExpires && Date.now() < this.tokenExpires - 60000) {
             return this.token;
         }
@@ -23,6 +24,7 @@ export class SendPulseService {
             });
 
             this.token = response.data.access_token;
+            // Устанавливаем время истечения на минуту раньше реального для подстраховки
             this.tokenExpires = Date.now() + ((response.data.expires_in - 60) * 1000);
             console.log('New SendPulse token received');
             return this.token;
@@ -58,64 +60,63 @@ export class SendPulseService {
                 }
             } catch (error) {
                 lastError = error;
+                
+                // Если ошибка 401 (истекший токен), пробуем получить новый токен
                 if (error.response && error.response.status === 401) {
                     console.log('Token expired, will retry with new token...');
                     if (attempt < maxRetries) {
                         continue;
                     }
                 }
+                
                 throw error;
             }
         }
+
         throw lastError;
     }
 
     formatPhoneNumber(phone) {
+        // Удаляем все нецифровые символы
         const cleanPhone = phone.replace(/\D/g, '');
+        
+        // Убираем префикс 380 если он есть
         const normalizedPhone = cleanPhone.replace(/^380/, '');
-        return '+380' + normalizedPhone;
-    }
-
-    async findContact(phoneNumber) {
-        try {
-            const formattedPhone = this.formatPhoneNumber(phoneNumber);
-            const response = await this.makeRequest('POST', `/crm/v1/contacts/search`, {
-                query: formattedPhone
-            });
-            
-            if (response.data && response.data.length > 0) {
-                return response.data[0].id;
-            }
-            return null;
-        } catch (error) {
-            console.error('Error finding contact:', error.response ? error.response.data : error);
-            return null;
-        }
+        
+        // Добавляем 380 без плюса для phones массива
+        return '380' + normalizedPhone;
     }
 
     async createContact(phoneNumber, name) {
         try {
-            const existingContactId = await this.findContact(phoneNumber);
-            if (existingContactId) {
-                console.log(`Contact already exists with ID: ${existingContactId}`);
-                return existingContactId;
-            }
-
             const formattedPhone = this.formatPhoneNumber(phoneNumber);
             
             const contactData = {
+                responsibleId: 8300068,
                 firstName: name.trim(),
-                channels: [{
-                    type: 'phone',
-                    value: formattedPhone
-                }]
+                phones: [formattedPhone]
             };
 
             const response = await this.makeRequest('POST', '/crm/v1/contacts', contactData);
-            return response.id;
+            
+            if (response.success && response.data && response.data.id) {
+                return response.data.id;
+            }
+            
+            throw new Error('Failed to create contact: Invalid response format');
         } catch (error) {
             console.error('Error creating contact:', error.response ? error.response.data : error);
             throw error;
+        }
+    }
+
+    async linkContactToDeal(dealId, contactId) {
+        try {
+            await this.makeRequest('POST', `/crm/v1/deals/${dealId}/contacts/${contactId}`);
+            return true;
+        } catch (error) {
+            console.error('Error linking contact to deal:', error.response ? error.response.data : error);
+            return false;
         }
     }
 
@@ -128,12 +129,13 @@ export class SendPulseService {
 
             console.log(`Creating SendPulse deal for ${phone} (${title})`);
             
-            const formattedPhone = this.formatPhoneNumber(phone);
+            // Форматируем телефон с плюсом для binotel_phone
+            const formattedBinotelPhone = '+' + this.formatPhoneNumber(phone);
+            
+            // Преобразуем цену в число
             const numericPrice = parseInt(price.replace(/\D/g, ''));
             
-            const contactId = await this.createContact(phone, sellerName);
-            console.log(`Contact ID: ${contactId}`);
-            
+            // Создаем сделку с ценой и названием машины
             const dealData = {
                 pipelineId: 130957,
                 stepId: 451337,
@@ -143,18 +145,31 @@ export class SendPulseService {
                 attributes: [
                     {
                         attributeId: 780917,
-                        value: formattedPhone
+                        value: formattedBinotelPhone
                     },
                     {
                         attributeId: 780918,
                         value: url
                     }
-                ],
-                contact: contactId
+                ]
             };
 
-            await this.makeRequest('POST', '/crm/v1/deals', dealData);
-            console.log(`✓ Successfully added deal "${title}" with price ${numericPrice} USD for phone: ${formattedPhone}`);
+            // Создаем сделку
+            const dealResponse = await this.makeRequest('POST', '/crm/v1/deals', dealData);
+            
+            if (!dealResponse || !dealResponse.data || !dealResponse.data.id) {
+                throw new Error('Failed to create deal: Invalid response format');
+            }
+            
+            const dealId = dealResponse.data.id;
+            
+            // Создаем контакт
+            const contactId = await this.createContact(phone, sellerName);
+            
+            // Связываем контакт со сделкой
+            await this.linkContactToDeal(dealId, contactId);
+
+            console.log(`✓ Successfully added deal "${title}" with price ${numericPrice} USD for phone: ${formattedBinotelPhone}`);
             return true;
         } catch (error) {
             console.error('Error in SendPulse CRM operation:', error.response ? error.response.data : error);
