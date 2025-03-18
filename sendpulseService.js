@@ -83,8 +83,8 @@ export class SendPulseService {
             const contactData = {
                 firstName: carTitle || 'Новый контакт',
                 channels: [{
-                    type: 'phone',
-                    value: cleanPhone
+                    type: 'binotel_phone',
+                    value: '+380' + cleanPhone.replace(/^380/, '')
                 }]
             };
 
