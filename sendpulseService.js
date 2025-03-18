@@ -79,7 +79,9 @@ export class SendPulseService {
     async findContact(phoneNumber) {
         try {
             const formattedPhone = this.formatPhoneNumber(phoneNumber);
-            const response = await this.makeRequest('GET', `/crm/v1/contacts?query=${formattedPhone}`);
+            const response = await this.makeRequest('POST', `/crm/v1/contacts/search`, {
+                query: formattedPhone
+            });
             
             if (response.data && response.data.length > 0) {
                 return response.data[0].id;
