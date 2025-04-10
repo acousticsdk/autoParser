@@ -80,11 +80,22 @@ export class SendPulseService {
         // Удаляем все нецифровые символы
         const cleanPhone = phone.replace(/\D/g, '');
         
-        // Убираем префикс 380 если он есть
-        const normalizedPhone = cleanPhone.replace(/^380/, '');
+        // Убираем все нули в начале и оставляем только цифры
+        const digits = cleanPhone.replace(/^0+/, '');
         
-        // Добавляем 380 без плюса для phones массива
-        return '380' + normalizedPhone;
+        // Если номер начинается с 380, оставляем как есть
+        // Если с 80, добавляем 3 спереди
+        // Если просто номер, добавляем 380
+        let normalizedPhone;
+        if (digits.startsWith('380')) {
+            normalizedPhone = digits;
+        } else if (digits.startsWith('80')) {
+            normalizedPhone = '3' + digits;
+        } else {
+            normalizedPhone = '380' + digits;
+        }
+        
+        return normalizedPhone;
     }
 
     async createContact(phoneNumber, name) {

@@ -273,7 +273,7 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     // Проверяем, существует ли номер в базе перед сохранением
     const phoneExists = await storage.isPhoneNumberExists(phoneNumber);
     if (phoneExists) {
-        console.log(`Phone number ${phoneNumber} already exists in database, skipping SMS handling...`);
+        console.log(`Phone number ${phoneNumber} already exists in database, skipping SMS and SendPulse...`);
         return true; // Return true to continue processing the car
     }
     
@@ -396,14 +396,21 @@ async function processCarSequentially(car) {
             const phoneHandlingResult = await handlePhoneNumbers(phoneData, car);
             console.log(`Phone handling result: ${phoneHandlingResult}`);
             
-            // 3. Send to SendPulse
-            console.log('\n3. Sending to SendPulse...');
-            const sendpulseResult = await sendpulseService.addDeal(phoneData.phones[0], car.url, car.price, car.title, phoneData.sellerName);
+            // 3. Send to SendPulse only if phone number is new
+            console.log('\n3. Checking if phone number is new for SendPulse...');
+            const phoneExists = await storage.isPhoneNumberExists(phoneData.phones[0]);
             
-            if (!sendpulseResult) {
-                console.log('❌ Failed to send to SendPulse');
+            if (!phoneExists) {
+                console.log('Phone number is new, sending to SendPulse...');
+                const sendpulseResult = await sendpulseService.addDeal(phoneData.phones[0], car.url, car.price, car.title, phoneData.sellerName);
+                
+                if (!sendpulseResult) {
+                    console.log('❌ Failed to send to SendPulse');
+                } else {
+                    console.log('✓ Successfully sent to SendPulse');
+                }
             } else {
-                console.log('✓ Successfully sent to SendPulse');
+                console.log('Phone number already exists, skipping SendPulse');
             }
             
             // 4. Mark car as sent
