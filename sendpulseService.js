@@ -77,25 +77,10 @@ export class SendPulseService {
     }
 
     formatPhoneNumber(phone) {
-        // Удаляем все нецифровые символы
-        const cleanPhone = phone.replace(/\D/g, '');
-        
-        // Убираем все нули в начале и оставляем только цифры
-        const digits = cleanPhone.replace(/^0+/, '');
-        
-        // Если номер начинается с 380, оставляем как есть
-        // Если с 80, добавляем 3 спереди
-        // Если просто номер, добавляем 380
-        let normalizedPhone;
-        if (digits.startsWith('380')) {
-            normalizedPhone = digits;
-        } else if (digits.startsWith('80')) {
-            normalizedPhone = '3' + digits;
-        } else {
-            normalizedPhone = '380' + digits;
-        }
-        
-        return normalizedPhone;
+        // Убираем скобки, пробелы и тире
+        const cleanPhone = phone.replace(/[\s\(\)\-]/g, '');
+        // Добавляем +38 в начало
+        return `+38${cleanPhone}`;
     }
 
     async createContact(phoneNumber, name) {
@@ -138,10 +123,17 @@ export class SendPulseService {
                 return false;
             }
 
+            // Проверяем, существует ли номер в базе
+            const phoneExists = await storage.isPhoneNumberExists(phone);
+            if (phoneExists) {
+                console.log(`Phone number ${phone} already exists in database, skipping SendPulse...`);
+                return false;
+            }
+
             console.log(`Creating SendPulse deal for ${phone} (${title})`);
             
-            // Форматируем телефон с плюсом для binotel_phone
-            const formattedBinotelPhone = '+' + this.formatPhoneNumber(phone);
+            // Форматируем телефон для binotel_phone
+            const formattedBinotelPhone = this.formatPhoneNumber(phone);
             
             // Преобразуем цену в число
             const numericPrice = parseInt(price.replace(/\D/g, ''));
