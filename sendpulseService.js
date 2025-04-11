@@ -126,10 +126,10 @@ export class SendPulseService {
                 return false;
             }
 
-            // Проверяем, существует ли номер в базе в исходном виде
-            const phoneExists = await storage.isPhoneNumberExists(phone);
-            if (phoneExists) {
-                console.log(`Phone number ${phone} already exists in database, skipping SendPulse...`);
+            // Проверяем, был ли номер уже отправлен в CRM
+            const isSentToCRM = await storage.isPhoneNumberSentToCRM(phone);
+            if (isSentToCRM) {
+                console.log(`Phone number ${phone} was already sent to CRM, skipping...`);
                 return false;
             }
 
@@ -174,6 +174,9 @@ export class SendPulseService {
             
             // Связываем контакт со сделкой
             await this.linkContactToDeal(dealId, contactId);
+
+            // Отмечаем номер как отправленный в CRM
+            await storage.markPhoneNumberAsSentToCRM(phone, { title, url });
 
             console.log(`✓ Successfully added deal "${title}" with price ${numericPrice} USD for phone: ${formattedBinotelPhone}`);
             return true;

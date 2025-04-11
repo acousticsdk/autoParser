@@ -5,6 +5,7 @@ const MAX_URLS = 50;
 const COLLECTION_NAME = 'sent_cars';
 const PENDING_SMS_COLLECTION = 'pending_sms';
 const PHONE_NUMBERS_COLLECTION = 'phone_numbers';
+const SENT_TO_CRM_COLLECTION = 'sent_to_crm';
 const CONNECT_OPTIONS = {
     connectTimeoutMS: 5000,
     socketTimeoutMS: 30000,
@@ -33,6 +34,10 @@ export class Storage {
             
             await this.db.collection(PHONE_NUMBERS_COLLECTION).createIndex({ phoneNumber: 1 });
             await this.db.collection(PHONE_NUMBERS_COLLECTION).createIndex({ parsedAt: 1 });
+
+            // Создаем индекс для новой коллекции
+            await this.db.collection(SENT_TO_CRM_COLLECTION).createIndex({ phoneNumber: 1 }, { unique: true });
+            await this.db.collection(SENT_TO_CRM_COLLECTION).createIndex({ sentAt: 1 });
             
             this.loaded = true;
             this.retryCount = 0;
@@ -219,6 +224,47 @@ export class Storage {
             return result.acknowledged;
         } catch (error) {
             console.error('Error removing pending SMS:', error);
+            return false;
+        }
+    }
+
+    async isPhoneNumberSentToCRM(phoneNumber) {
+        try {
+            const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
+            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+                return false;
+            }
+
+            const result = await this.db.collection(SENT_TO_CRM_COLLECTION)
+                .findOne({ phoneNumber: trimmedPhone });
+            return !!result;
+        } catch (error) {
+            console.error('Error checking if phone number was sent to CRM:', error);
+            return false;
+        }
+    }
+
+    async markPhoneNumberAsSentToCRM(phoneNumber, carInfo) {
+        try {
+            const trimmedPhone = phoneNumber ? phoneNumber.trim() : null;
+            if (!trimmedPhone || trimmedPhone === 'Телефон на сайті') {
+                return false;
+            }
+
+            const result = await this.db.collection(SENT_TO_CRM_COLLECTION).insertOne({
+                phoneNumber: trimmedPhone,
+                carTitle: carInfo.title,
+                carUrl: carInfo.url,
+                sentAt: new Date()
+            });
+
+            return result.acknowledged;
+        } catch (error) {
+            if (error.code === 11000) {
+                // Если ошибка дубликата, считаем успешным
+                return true;
+            }
+            console.error('Error marking phone number as sent to CRM:', error);
             return false;
         }
     }
