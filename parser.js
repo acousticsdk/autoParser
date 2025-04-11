@@ -45,7 +45,7 @@ const MAX_SIZE = 60;
 const UPDATE_INTERVAL = 14 * 60 * 1000; // 14 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 130;
+const FRESH_LISTING_THRESHOLD = 140;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
@@ -273,7 +273,7 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     // Проверяем, существует ли номер в базе перед сохранением
     const phoneExists = await storage.isPhoneNumberExists(phoneNumber);
     if (phoneExists) {
-        console.log(`Phone number ${phoneNumber} already exists in database, skipping SMS...`);
+        console.log(`Phone number ${phoneNumber} already exists in database, skipping SMS and SendPulse...`);
         return true; // Return true to continue processing the car
     }
     
@@ -754,6 +754,7 @@ const server = http.createServer(async (req, res) => {
 async function startParser() {
     try {
         await storage.load();
+        await sendpulseService.init();
         console.log('Database connected successfully');
         
         // Запускаем первое обновление

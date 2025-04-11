@@ -1,8 +1,6 @@
 import axios from 'axios';
 import { Storage } from './storage.js';
 
-const storage = new Storage();
-
 export class SendPulseService {
     constructor() {
         this.clientId = process.env.SENDPULSE_CLIENT_ID;
@@ -10,6 +8,11 @@ export class SendPulseService {
         this.baseUrl = 'https://api.sendpulse.com';
         this.token = null;
         this.tokenExpires = null;
+        this.storage = new Storage();
+    }
+
+    async init() {
+        await this.storage.load();
     }
 
     async getToken(forceRefresh = false) {
@@ -127,7 +130,7 @@ export class SendPulseService {
             }
 
             // Проверяем, был ли номер уже отправлен в CRM
-            const isSentToCRM = await storage.isPhoneNumberSentToCRM(phone);
+            const isSentToCRM = await this.storage.isPhoneNumberSentToCRM(phone);
             if (isSentToCRM) {
                 console.log(`Phone number ${phone} was already sent to CRM, skipping...`);
                 return false;
@@ -176,7 +179,7 @@ export class SendPulseService {
             await this.linkContactToDeal(dealId, contactId);
 
             // Отмечаем номер как отправленный в CRM
-            await storage.markPhoneNumberAsSentToCRM(phone, { title, url });
+            await this.storage.markPhoneNumberAsSentToCRM(phone, { title, url });
 
             console.log(`✓ Successfully added deal "${title}" with price ${numericPrice} USD for phone: ${formattedBinotelPhone}`);
             return true;
