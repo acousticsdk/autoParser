@@ -1,4 +1,7 @@
 import axios from 'axios';
+import { Storage } from './storage.js';
+
+const storage = new Storage();
 
 export class SendPulseService {
     constructor() {
@@ -123,7 +126,7 @@ export class SendPulseService {
                 return false;
             }
 
-            // Проверяем, существует ли номер в базе
+            // Проверяем, существует ли номер в базе в исходном виде
             const phoneExists = await storage.isPhoneNumberExists(phone);
             if (phoneExists) {
                 console.log(`Phone number ${phone} already exists in database, skipping SendPulse...`);
