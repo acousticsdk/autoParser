@@ -45,7 +45,7 @@ const MAX_SIZE = 60;
 const UPDATE_INTERVAL = 14 * 60 * 1000; // 14 minutes between full update
 
 // Fresh listings threshold (in minutes)
-const FRESH_LISTING_THRESHOLD = 120;
+const FRESH_LISTING_THRESHOLD = 130;
 
 // SMS sending time window
 const SMS_START_HOUR = 9;
@@ -273,7 +273,7 @@ async function handlePhoneNumbers(phoneNumbers, car) {
     // Проверяем, существует ли номер в базе перед сохранением
     const phoneExists = await storage.isPhoneNumberExists(phoneNumber);
     if (phoneExists) {
-        console.log(`Phone number ${phoneNumber} already exists in database, skipping SMS and SendPulse...`);
+        console.log(`Phone number ${phoneNumber} already exists in database, skipping SMS...`);
         return true; // Return true to continue processing the car
     }
     
@@ -396,21 +396,14 @@ async function processCarSequentially(car) {
             const phoneHandlingResult = await handlePhoneNumbers(phoneData, car);
             console.log(`Phone handling result: ${phoneHandlingResult}`);
             
-            // 3. Send to SendPulse only if phone number is new
-            console.log('\n3. Checking if phone number is new for SendPulse...');
-            const phoneExists = await storage.isPhoneNumberExists(phoneData.phones[0]);
+            // 3. Send to SendPulse
+            console.log('\n3. Sending to SendPulse...');
+            const sendpulseResult = await sendpulseService.addDeal(phoneData.phones[0], car.url, car.price, car.title, phoneData.sellerName);
             
-            if (!phoneExists) {
-                console.log('Phone number is new, sending to SendPulse...');
-                const sendpulseResult = await sendpulseService.addDeal(phoneData.phones[0], car.url, car.price, car.title, phoneData.sellerName);
-                
-                if (!sendpulseResult) {
-                    console.log('❌ Failed to send to SendPulse');
-                } else {
-                    console.log('✓ Successfully sent to SendPulse');
-                }
+            if (!sendpulseResult) {
+                console.log('❌ Failed to send to SendPulse');
             } else {
-                console.log('Phone number already exists, skipping SendPulse');
+                console.log('✓ Successfully sent to SendPulse');
             }
             
             // 4. Mark car as sent
