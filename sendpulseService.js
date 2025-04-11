@@ -1,7 +1,4 @@
 import axios from 'axios';
-import { Storage } from './storage.js';
-
-const storage = new Storage();
 
 export class SendPulseService {
     constructor() {
@@ -127,7 +124,6 @@ export class SendPulseService {
             }
 
             // Проверяем, существует ли номер в базе
-            await storage.load(); // Убедимся, что соединение с базой установлено
             const phoneExists = await storage.isPhoneNumberExists(phone);
             if (phoneExists) {
                 console.log(`Phone number ${phone} already exists in database, skipping SendPulse...`);
@@ -135,12 +131,6 @@ export class SendPulseService {
             }
 
             console.log(`Creating SendPulse deal for ${phone} (${title})`);
-            
-            // Создаем контакт перед созданием сделки
-            const contactId = await this.createContact(phone, sellerName);
-            if (!contactId) {
-                throw new Error('Failed to create contact');
-            }
             
             // Форматируем телефон для binotel_phone
             const formattedBinotelPhone = this.formatPhoneNumber(phone);
@@ -175,6 +165,9 @@ export class SendPulseService {
             }
             
             const dealId = dealResponse.data.id;
+            
+            // Создаем контакт
+            const contactId = await this.createContact(phone, sellerName);
             
             // Связываем контакт со сделкой
             await this.linkContactToDeal(dealId, contactId);
